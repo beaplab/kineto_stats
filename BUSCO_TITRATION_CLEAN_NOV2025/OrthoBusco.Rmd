@@ -1,0 +1,624 @@
+---
+title: "Untitled"
+author: "Zavadska Daryna"
+date: "2025-11-18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r, echo=FALSE , message=FALSE}
+##upload packages
+library(stringr)
+library(openxlsx)
+library(data.table)
+library(magrittr)
+#library(GGally)
+#library(propr)
+library(data.table)
+library(ggplot2)
+library(reshape2)
+library(tidyverse)
+library(dplyr)
+library(plyr)
+library(microshades)
+library(scales)
+library(ggbreak) 
+library(patchwork)
+library(ggpubr)
+library(gplots)
+library(PerformanceAnalytics)
+library(microshades)
+library(gridExtra)
+```
+
+```{r}
+colors <-c(microshades_palette("micro_blue", lightest = FALSE), 
+           microshades_palette("micro_purple", lightest = FALSE), microshades_palette("micro_cvd_purple", lightest = FALSE), 
+           microshades_palette("micro_green", lightest = FALSE), 
+           microshades_palette("micro_cvd_green", lightest = FALSE),
+           microshades_palette("micro_orange", lightest = FALSE), 
+           microshades_palette("micro_brown", lightest = FALSE), 
+           microshades_palette("micro_cvd_turquoise", lightest = FALSE),
+           microshades_palette("micro_cvd_gray", lightest = FALSE))
+
+```
+
+
+
+
+
+
+```{r}
+suffix <- "V3"
+
+per_sp <- fread(paste0("/home/dzavadska/Data/QUANTITATIVE_DATASET/BUSCO_TITRATION_CLEAN_NOV2025/",suffix,"Statistics_PerSpecies.tsv"))
+
+per_sp_molten <- melt(per_sp)
+
+per_sp2 <- dcast(per_sp_molten, variable~V1)
+
+groups <- fread("vocabulary_groups.csv", header = F)
+colnames(groups)<- c("variable", "group")
+per_sp_molten <- merge(per_sp_molten, groups, "variable")
+
+per_sp_molten$variable <- factor(
+    per_sp_molten$variable,
+    levels = unique(per_sp_molten$variable[order(per_sp_molten$group)])
+)
+
+
+
+gg5 <- ggplot(per_sp_molten[grep("Number", per_sp_molten$V1),], aes( V1,variable, fill=value))+geom_tile()+
+   facet_grid(group ~ ., scales="free_y", space="free_y") +
+  theme_classic()+theme(axis.text.x = element_text(size=5,angle=90,hjust=0.99,vjust=0.1), axis.text.y = element_text(size=5))+scale_fill_gradientn(colors = hcl.colors(20, "RdYlGn"))+ggtitle(suffix)
+
+ggsave(paste0("per_sp_num", suffix, ".png"), gg5)
+
+gg6 <- ggplot(per_sp_molten[grep("Percentage", per_sp_molten$V1),], aes( V1,variable, fill=value))+geom_tile()+
+     facet_grid(group ~ ., scales="free_y", space="free_y") +
+  theme_classic()+theme(axis.text.x = element_text(size=6,angle=90,hjust=0.99,vjust=0.1), axis.text.y = element_text(size=5))+scale_fill_gradientn(colors = hcl.colors(20, "RdYlGn"))+ggtitle(suffix)
+
+ggsave(paste0("per_sp_percent", suffix, ".png"),  gg6)
+
+```
+
+
+
+
+## All summary
+
+```{r}
+
+list <- c("V3")
+
+OG_summary <- data.frame()
+sg_summary <- data.frame()
+sg_all <- data.frame()
+
+for (suffix in list) {
+  path <- paste0("/home/dzavadska/Data/QUANTITATIVE_DATASET/BUSCO_TITRATION_CLEAN_NOV2025/", suffix, "Orthogroups.GeneCount.tsv")
+  df <- fread(path)
+
+  df_molten <- melt(df)
+  #######
+  
+  df_molten$value <- as.numeric(df_molten$value)
+  df_molten$Orthogroup <- as.factor(df_molten$Orthogroup)
+
+  OG_summary <- df_molten %>%
+  group_by(Orthogroup) %>%
+  dplyr::summarize(
+    total = value[variable == "Total"], # Assumes "Total" exists once per Orthogroup
+    sd = sd(value[variable != "Total"]),
+    mean = mean(value[variable != "Total"]),
+    sp_repr = length(which(value!=0))-1 ,
+    setting = suffix
+  )
+
+write.csv(OG_summary, paste0("OG_summary_", suffix, ".csv"))
+
+#########
+subset <- OG_summary[which(OG_summary$mean<=1 & OG_summary$sd<=1 & OG_summary$sp_repr>25),]
+
+subset2 <- df_molten[df_molten$Orthogroup %in% subset$Orthogroup,]
+colnames(subset2) <-c("Orthogroup", "variable", "value" ) 
+
+
+mergedsubset <- merge(subset,subset2,  by = "Orthogroup")
+mergedsubset <- mergedsubset[mergedsubset$variable!="Total",]
+mergedsubset$variable <- str_replace(mergedsubset$variable,".cdhit_pep97", " ")
+#########
+print(suffix)
+print(length(unique(mergedsubset$Orthogroup)) )
+print(length(unique(mergedsubset$Orthogroup[as.integer(mergedsubset$sp_repr)==mergedsubset$total])) )
+
+sg <- mergedsubset[mergedsubset$Orthogroup %in% unique(mergedsubset$Orthogroup[as.integer(mergedsubset$sp_repr)==mergedsubset$total]),]
+#########
+
+groups <- fread("vocabulary_groups.csv", header = F)
+colnames(groups)<- c("variable", "group")
+
+sg_sp_occr <- sg %>% group_by(variable) %>% dplyr::summarise(occurence_in_sg = sum(value))
+
+
+
+sg_sp_occr <- merge(sg_sp_occr, groups, "variable")
+sg_sp_occr$settings <- suffix
+
+sg_summary <- rbind(sg_summary, sg_sp_occr)
+
+
+ogs <- sg %>% group_by(sp_repr) %>% dplyr::summarise(og_count = length(unique(Orthogroup)), settings = suffix)
+sg_all <- rbind(sg_all, ogs)
+}
+
+
+sum_plot <- ggplot(sg_summary, aes(variable, occurence_in_sg))+geom_point(aes(shape = group, colour=settings), size=2, alpha=0.7)+theme(axis.text.x = element_text(angle=90,hjust=0.99,vjust=0.1, size = 7))
+ggsave("sum_plot.png", sum_plot)
+
+ggplot(sg_all, aes(sp_repr, og_count))+geom_point(aes(shape=settings,colour=settings), size=2)+theme_classic() + scale_shape_manual(values=seq(0,15))
+sg_all
+#ogs <- sg %>% group_by(sp_repr) %>% dplyr::summarise(og_count = length(unique(Orthogroup)), settings = suffix)
+
+```
+
+
+
+## Filtering by OG
+
+```{r}
+
+OG_local <- fread("OG_summary_V3.csv")
+
+subset <- OG_local[which(OG_local$mean<=1 & OG_local$sd<=1 & OG_local$sp_repr>30),]
+
+double_subset <- subset[which(subset$mean>=0.9 & subset$sd<=0.5 & subset$sp_repr>30),]
+
+fwrite(double_subset, "double_subset_V3.csv")
+#OG_local[which(OG_local$mean<=1 & OG_local$sd==0 & OG_local$sp_repr>25),]
+
+ggplot(subset, aes(sd))+geom_histogram()+theme_classic()
+ggplot(subset, aes(sp_repr))+geom_histogram()+theme_classic()
+ggplot(subset, aes(mean))+geom_histogram()+theme_classic()
+
+ggplot(subset, aes(mean, sd))+geom_point(aes(size = sp_repr))+theme_classic()+theme_classic()
+
+```
+
+##Plots for the preprint
+
+
+```{r}
+library(ggVennDiagram)
+library(cowplot)
+
+sd <- ggplot(OG_local, aes(sd))+geom_histogram()+theme_classic()+scale_x_log10()+geom_vline(xintercept = 0.5, linetype="dashed", color = "red")+xlab("Standard deviation of gene count/species in OG")
+mean <- ggplot(OG_local, aes(mean))+geom_histogram()+theme_classic()+scale_x_log10()+
+  geom_vline(xintercept = 1, linetype="dashed", color = "red")+
+  geom_vline(xintercept = 0.9, linetype="dashed", color = "red")+
+  xlab("Mean gene count/species in OG")
+sp <- ggplot(OG_local, aes(sp_repr))+geom_histogram()+theme_classic()+scale_y_log10()+geom_vline(xintercept = 30, linetype="dashed", color = "red")+xlab("Number of species represented in the OG")
+
+
+
+#subset[which(subset$mean>=0.9 & subset$sd<=0.5 & subset$sp_repr>35),]
+
+
+x <- list("Mean" = OG_local$Orthogroup[which(OG_local$mean<=1 & OG_local$mean>=0.9)], 
+          "SD" = OG_local$Orthogroup[which(OG_local$sd<=0.5)],
+          ">30 species" = OG_local$Orthogroup[which(OG_local$sp_repr>30 )] )
+
+# length(intersect(x$A, intersect(x$B, x$C)))
+
+venn <- 
+  ggVennDiagram(x, label_alpha = 0)+
+  scale_fill_gradient(low="grey90", high = "grey50") + theme(legend.position = "none")+scale_alpha_continuous(range=c(0.2,0.4))+
+  theme(plot.margin=margin(20, 60, 20, 60)) + coord_fixed(ratio = 0.7) 
+#  +  annotate("text", label =c("Mean<=1&>=0.9","SD<=0.5",">35 species in OG"), x = c(-1, 0.8, 0.2),y = c(-1.1, -0.8, 0.2), size = 12) 
+
+
+top_row <- plot_grid(sp, mean, sd,  labels = c("A", "B", "C"), ncol = 3)
+bottom_row <- plot_grid(venn, labels = "D", ncol = 1)
+
+# Combine rows
+panel_OG_subset <- plot_grid(top_row, bottom_row, ncol = 1, rel_heights = c(3, 5))
+
+
+ggsave("panel_OG_subset.pdf", panel_OG_subset, width=12, height=8)
+
+
+```
+
+
+
+```{r}
+
+suffix <- "V3"
+
+
+path <- paste0("/home/dzavadska/Data/QUANTITATIVE_DATASET/BUSCO_TITRATION_CLEAN_NOV2025/", suffix, "Orthogroups.GeneCount.tsv")
+df <- fread(path)
+
+df <- df[,!"Total"]
+df <- df[df$Orthogroup %in% unique(double_subset$Orthogroup),]
+  
+df_molten <- melt(df)
+  #######
+  
+pseudobusco <- df_molten %>% dplyr:::count(variable, value, name = "occurrence")
+
+ggplot(pseudobusco, aes(occurrence, variable, fill =  as.factor(value)) )+geom_bar(stat = "identity", width = 0.8)+
+  theme_classic()+ theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1))+
+     xlab("Occurence in OG")+ylab("species") + labs(fill = "Copy number per OG")+
+      scale_fill_brewer(palette = "Set3", limits = c("1","2","3","0"))
+  
+ggsave("PSEUDOBUSCO.png")
+
+
+
+df_molten$value <- as.numeric(df_molten$value)
+df_molten$Orthogroup <- as.factor(df_molten$Orthogroup)
+
+
+```
+
+
+
+### genes <200 / all genes lengths
+```{r}
+
+len_df <- fread("Ortho_NR90_length.tsv")
+
+len_df$V1 <- str_replace(len_df$V1, ".fasta", "")
+
+
+ggplot(len_df, aes(V3))+geom_histogram()+
+  facet_wrap(~V1, scales="free_x")+scale_x_log10() +theme_classic()
+ggsave("protein_length.png", height=10, width=10)
+
+
+g65 <- len_df[len_df$V1 == "G65133",]
+
+
+sum(g65$V3[g65$V3>200])
+sum(g65$V3[g65$V3<200])
+
+sum(g65$V3[g65$V3>200])/sum(g65$V3[g65$V3<200])
+
+
+```
+
+
+
+
+
+
+
+
+### Unassigned genes length/genes <200
+```{r}
+
+unass <- fread("Orthogroups_UnassignedGenes.tsv")
+
+unass_m <- pivot_longer(unass, cols = -Orthogroup)
+
+len_df$V2 <- str_replace(len_df$V2, " .*", "")
+len_df$V2 <- str_replace_all(len_df$V2, "::", "__")
+
+un_len <- merge(len_df, unass_m, by.x=c("V1","V2"), by.y=c("name","value") )
+
+sum( un_len$V3[un_len$V1 == "G65133" & un_len$V3<200] ) / sum(g65$V3[g65$V3<200])
+
+ggplot(un_len , aes(V3))+geom_histogram()+scale_x_log10() +theme_classic()+facet_wrap(~V1, scales="free_x")
+ 
+
+```
+
+
+
+
+```{r}
+
+path <- paste0("/home/dzavadska/Data/QUANTITATIVE_DATASET/BUSCO_TITRATION_CLEAN_NOV2025/", suffix, "Orthogroups.GeneCount.tsv")
+dupl <- fread(path)
+
+dupl <- dupl[,!"Total"]
+#df <- df[df$Orthogroup %in% unique(double_subset$Orthogroup),]
+  
+dupl_m <- melt(dupl)
+  #######
+  
+pseudobusco <- dupl_m %>% dplyr:::count(variable, value, name = "occurrence")
+
+ggplot(dupl_m[dupl_m$value>0,], aes(value) )+geom_histogram()+scale_x_log10()+
+  facet_wrap(~variable, scales="free_y")+theme_classic()
+ggsave("all_dupl.png",height=10, width=15 )
+
+  
+
+```
+
+
+
+
+
+```{r}
+
+#unique(un_len$Orthogroup[un_len$V1 == "G65133" & un_len$V3<200])
+
+#unique(dupl_m$Orthogroup[dupl_m$variable == "G65133"])
+
+#dupl_m[dupl_m$value < 2,]
+
+```
+
+
+
+## Singletons
+run the following chunk in bash to obtain a list of singleton OGs (Orthogroups.tsv are obtained directly from OrthoFinder output):
+
+!!!!!!!!!!!!!! FOLLOWING CHUNK TAKES A LOT OF TIME uncomment if need to re-create the table from orthifinder output !!!!!!!!!!!!!!
+
+```{r}
+
+ og <- read.delim("Orthogroups.tsv", sep="\t", check.names=FALSE)
+
+# species_cols <- colnames(og)[-1]
+
+# species_specific <- og %>% rowwise() %>%
+#  mutate(non_empty = sum(c_across(all_of(species_cols)) != "" & !is.na(c_across(all_of(species_cols))))) %>%
+#  filter(non_empty == 1) %>% ungroup() %>%
+#  pivot_longer(cols = all_of(species_cols), names_to="Species", values_to="Genes") %>%
+#  filter(Genes != "" & !is.na(Genes)) %>%
+#  select(Orthogroup, Species)
+
+
+
+# write.table(species_specific, "species_specific_OGs.tsv", sep="\t", quote=FALSE, row.names=FALSE)
+
+```
+
+
+```{r}
+species_specific <- fread("species_specific_OGs.tsv")
+
+#sanity check
+length(species_specific$Orthogroup[species_specific$Species == "G65133"])==per_sp_molten$value[per_sp_molten$V1=="Number of species-specific orthogroups" & per_sp_molten$variable == "G65133"]
+
+og_subs <-og[og$Orthogroup %in% species_specific$Orthogroup[species_specific$Species == "G65133"], ]
+
+
+gen_list <- str_replace_all(g65$V2[g65$V3<200], " .*", "" )
+gen_list <- str_replace_all(gen_list, "::", "__" )
+
+
+singletons_genes <- data.frame()
+
+for(i in gen_list) {
+  index <- grep(i, og_subs$G65133 )
+  if(length(index)>0) {
+   OG <- og_subs$Orthogroup[index]
+   singletons_genes <- rbind(singletons_genes, data.frame(OG, i))
+  }
+}
+
+g65$V2 <- str_replace_all(g65$V2, " .*", "" )
+g65$V2 <- str_replace_all(g65$V2, "::", "__" )
+
+g65_short <- g65[g65$V3<200]
+
+sum(g65_short$V3[g65_short$V2 %in% singletons_genes$i]) / sum(g65_short$V3 )
+
+
+```
+
+##loop for all species
+
+```{r}
+
+species_specific <- fread("species_specific_OGs.tsv")
+
+short_all <- data.frame()
+
+for (sp in unique(len_df$V1)) {
+
+g65 <- len_df[len_df$V1 == sp,]
+
+g65_short <- g65[g65$V3<200]
+#sum(g65$V3[g65$V3>200])
+#sum(g65$V3[g65$V3<200])
+
+short_len <- sum(g65_short$V3)
+short_fract <- sum(g65_short$V3)/sum(g65$V3)
+short_unass_len <- sum( un_len$V3[un_len$V1 == sp & un_len$V3<200] )
+
+og_subs <-og[og$Orthogroup %in% species_specific$Orthogroup[species_specific$Species == sp], ]
+
+
+gen_list <- str_replace_all(g65$V2[g65$V3<200], " .*", "" )
+gen_list <- str_replace_all(gen_list, "::", "__" )
+
+
+singletons_genes <- data.frame()
+unassembled_genes <- un_len$V2[un_len$V1 == sp & un_len$V3<200]
+
+for(i in gen_list) {
+  index <- grep(i, og_subs[,sp] )
+  if(length(index)>0) {
+   OG <- og_subs$Orthogroup[index]
+   singletons_genes <- rbind(singletons_genes, data.frame(OG, i))
+  }
+}
+
+g65$V2 <- str_replace_all(g65$V2, " .*", "" )
+g65$V2 <- str_replace_all(g65$V2, "::", "__" )
+
+short_singleton_len <- sum( g65_short$V3 [ g65_short$V2 %in% singletons_genes$i] )
+short_both_groups_len <- sum( g65_short$V3 [ g65_short$V2 %in% intersect(singletons_genes$i, unassembled_genes) ] )
+
+short_all <- rbind(short_all, data.frame(sp, short_len, short_fract, short_unass_len, short_singleton_len, short_both_groups_len))
+
+}
+
+fwrite(short_all, "short_proteins_all_species.tsv")
+```
+
+##Plot for the preprint
+
+```{r}
+
+short_all <- fread("short_proteins_all_species.tsv")
+
+short_all$diff_both <- (short_all$short_len  - short_all$short_unass_len- short_all$short_singleton_len)
+short_all$diff_unass <- (short_all$short_len - short_all$short_unass_len)
+short_all$diff_singl <- (short_all$short_len - short_all$short_singleton_len)
+
+short_all_m <- melt(short_all)
+
+
+d1 <- ggplot(short_all_m[short_all_m$variable %in% c("short_unass_len", "short_singleton_len", "diff_both"),],
+        aes(x = value, y = sp, fill = as.factor(variable))) +
+        geom_bar(stat = "identity", width = 0.8) +
+        theme_bw() + #facet_wrap(~interaction(assembly, busco_db), scales = "free_x") +
+   xlab("Total lengths across <200 aa")+ylab("species") + labs(fill = "Is in OG?")+
+      scale_fill_brewer(palette = "Set3")+theme(legend.position = "bottom")+
+        ggtitle("Total lengths of proteins in singletons or unassigned to OG, for all proteins <200 aa")
+
+
+
+d2 <- ggplot(short_all_m[short_all_m$variable %in% c("short_fract"),],
+        aes(x = value, y = sp, fill = as.factor(variable))) +
+        geom_bar(stat = "identity", width = 0.8) +
+        theme_bw() + #facet_wrap(~interaction(assembly, busco_db), scales = "free_x") +
+   xlab("Total lengths across <200 aa")+ylab("species") +theme(legend.position = "none")+
+        ggtitle("Total lengths of proteins <200 aa/Total proteome length")
+
+        
+        
+gg <- grid.arrange(d1,d2,nrow=1 )
+
+
+ggsave("short_prot_OGs.png", gg, width=15, height = 8)
+
+
+                
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+### (single)Protein lengths per OG - to check for i.e. partials - especially, in KUCKIN
+```{r}
+
+
+og_subs2 <- og[og$Orthogroup %in% unique(df_molten$Orthogroup), ]
+
+og_subs2_m <- melt(og_subs2, id.vars = "Orthogroup")
+
+#merge(og_subs2_m, len_df)
+
+#uncomment the part below, otherwise used saved table (takes time to run)
+
+#pseudobusco_len_genes <- data.frame()
+
+#for(i in unique(len_df$V2)) {
+#  index <- grep(i, og_subs2_m$value)
+  
+#  if(length(index)>0) {
+#   OG <- og_subs2_m$Orthogroup[index]
+#   len <- len_df$V3[len_df$V2 == i]
+#   pseudobusco_len_genes <- rbind(pseudobusco_len_genes, data.frame(OG,len, i))
+#  }
+#}
+
+
+
+pseudobusco_len_genes$sp <- NA
+
+
+
+#for (sp in unique(len_df$V1)) {
+#  genes <- len_df$V2[len_df$V1 == sp]
+#  pseudobusco_len_genes$sp[pseudobusco_len_genes$i %in% genes] <- sp
+#  }
+
+
+#length(unique(pseudobusco_len_genes$OG))
+
+#fwrite(pseudobusco_len_genes, "pseudobusco_len_genes.tsv")
+
+```
+
+```{r}
+
+
+pseudobusco_len_genes <-fread("pseudobusco_len_genes.tsv")
+
+
+pseudobusco_len_genes %>%
+  group_by(OG, sp) %>%
+  dplyr::summarize(
+    mean_len = mean(len),
+    sd_len = sd(len),
+    gene_count = length(len),
+    .groups = "drop"
+  ) -> pseudobusco_len_summary
+
+
+unique(pseudobusco_len_summary$sp)
+
+pseudobusco_len_summary <- pseudobusco_len_summary[pseudobusco_len_summary$OG != "",]
+
+kuckin <- len_df[len_df$V1 == "KUCKIN",]
+
+ggplot(pseudobusco_len_summary, aes(mean_len) )+geom_histogram()+scale_x_log10()+
+  facet_wrap(~sp, scales="free_y")+theme_classic()
+
+ggsave("pseudobusco_len_summary.png",height=10, width=15 )
+
+ 
+ggplot(pseudobusco_len_summary[pseudobusco_len_summary$gene_count>1,], aes(mean_len) )+geom_histogram()+#scale_x_log10()+
+  facet_wrap(~sp, scales="free_y")+theme_classic()
+ggsave("pseudobusco_DUPLICATElen_summary.png",height=10, width=15 )
+
+
+ggplot(pseudobusco_len_summary[pseudobusco_len_summary$gene_count>1,], aes(sd_len) )+geom_histogram()+#scale_x_log10()+
+  facet_wrap(~sp, scales="free_y")+theme_classic()
+ggsave("pseudobusco_DUPLICATElenSD_summary.png",height=10, width=15 )
+
+
+```
+
+
+
+```{r}
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
