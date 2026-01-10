@@ -1,0 +1,1024 @@
+---
+title: "Untitled"
+author: "Zavadska Daryna"
+date: "2025-04-25"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+```{r}
+library(data.table)
+library(ggplot2)
+library(reshape2)
+#library(tidyverse)
+library(dplyr)
+library(plyr)
+library(microshades)
+library(scales)
+library(ggbreak) 
+library(patchwork)
+library(ggpubr)
+
+library(gplots)
+
+library(ggforce)
+library(aplot)
+library("gridExtra") 
+library(grid)
+library(png)
+library(cowplot)
+
+library(tidyr)
+library(stringr)
+
+```
+
+
+##Loop fo all available pre-R settings, controls
+
+```{r}
+# redund_setting <- c("controlORIGINAL", "controlNR90")
+redund_setting <- c("controlORIGINAL")
+
+# filter_setting <- c("ref", "Q25")
+filter_setting <- c("Q25")
+
+GRID <- expand.grid(redund_setting, filter_setting)
+
+filter_prefix <- "Filt_subplot_Alrat_10minus__ALsum_13plus_"
+
+for (grid in 1:nrow(GRID)) {
+  
+  RS <- GRID$Var1[grid]
+  FS <- GRID$Var2[grid]
+  cov_per_cds_prefix <- paste0("_", RS, "_CDS_cov_perCDS_", FS, ".txt")
+  tsv_prefix <- paste0("_", RS, "_CDS_", FS, "_BCFtools_viewfiltered.tsv")
+
+  
+  ##
+  number_of_genes_NR90 <- data.frame()
+
+tables <- list.files("/media/dzavadska/Elements/QUANTITATIVE_DATASET/PLOIDY/BCFTOOLS", pattern = cov_per_cds_prefix , full.names = TRUE)
+
+for ( e in 1:length(tables) ) {
+df <- fread( tables[e] )
+tmp <- data.frame("sp" = str_replace( tables[e] , cov_per_cds_prefix , "") , "CDS_count" = length(unique(df$V1)) )
+number_of_genes_NR90 <- rbind(tmp, number_of_genes_NR90)
+}
+
+
+
+
+ploidy1 <- list.files("/media/dzavadska/Elements/QUANTITATIVE_DATASET/PLOIDY/BCFTOOLS", pattern = tsv_prefix, full.names = TRUE)
+
+for (i in 1:length(ploidy1)) {
+  SP <- str_replace( ploidy1[i] , tsv_prefix , "")
+   SP <- str_replace( SP , "/media/dzavadska/Elements/QUANTITATIVE_DATASET/PLOIDY/BCFTOOLS/" , "")
+  
+
+df <- fread( ploidy1[i])
+
+df$sp <- str_replace( tables[i] , "_BCFtools_viewfiltered.tsv" , "")
+
+########################################################################################
+##########!!!!!!!!!!!!!!!!!!!!!  post-process FILTERING!!!!!!!!!!!!!!!!!!!!!!
+########################################################################################
+
+df <- df[as.numeric(df$V6) > 0,]
+df <- df[as.numeric(df$V7) > 0,]
+
+df <- df[as.numeric(df$V6)+as.numeric(df$V7) > 12,]
+
+#order of next 2 lines matters
+df_full <- df
+df <- df[as.numeric(df$V6)/as.numeric(df$V7) < 10,]
+
+
+########################################################################################
+########################################################################################
+########################################################################################
+   SP_name <- str_replace( SP , "_HAPL" , " haploid")
+   SP_name <- str_replace( SP_name , "_DIPL" , " diploid")
+    SP_name <- str_replace( SP_name , "_TRIPL" , " triploid")
+     SP_name <- str_replace( SP_name , "_TETRAPL" , "tetraploid")
+     
+
+gg1 <- ggplot(df_full)+geom_vline(xintercept = 1, colour="red", size = 0.3)+geom_histogram(aes(as.numeric(df_full$V6)/as.numeric(df_full$V7)), bins = 300)+
+  theme_bw()+theme(axis.title = element_blank())
+
+gg2 <- ggplot(df)+geom_histogram(aes(as.numeric(df$V6)/as.numeric(df$V7)))+geom_vline(xintercept = 1, colour="red")+
+  xlim(0, 10)+ggtitle(paste( SP_name )) +xlab("allele 1 : allele 2")+theme_bw()
+  #ggtitle(paste( SP_name, "allele-1/allele-2", RS, FS, filter_prefix)) +theme_bw()
+
+
+gg <- ggdraw() +
+  draw_plot(gg2) +
+  draw_plot(gg1, x = 0.65, y = 0.65, width = 0.3, height = 0.25)
+
+
+ggsave( paste0("/home/dzavadska/Data/QUANTITATIVE_DATASET/PLOIDY/",  RS, FS, filter_prefix, SP, "plot1.png"), gg)
+rm(gg)
+rm(gg1)
+rm(gg2)
+gc()
+
+
+
+gg1 <- ggplot(df_full)+geom_point(aes(as.numeric(df_full$V6)/as.numeric(df_full$V7)   , as.numeric(df_full$V6)+as.numeric(df_full$V7) ), alpha = 0.005, size = 0.025  )+geom_vline(xintercept = 1)+theme_bw()+theme(axis.title = element_blank())
+
+gg2 <- ggplot(df)+geom_point(aes(as.numeric(df$V6)/as.numeric(df$V7)   , as.numeric(df$V6)+as.numeric(df$V7) ), alpha = 0.05, size = 0.1  )+geom_vline(xintercept = 1)+
+  coord_cartesian(xlim = c(0,5))+
+  ggtitle(paste( SP, RS, FS, filter_prefix ))+theme_bw()
+
+gg <- ggdraw() +
+  draw_plot(gg2) +
+  draw_plot(gg1, x = 0.7, y = 0.65, width = 0.25, height = 0.25)
+
+ggsave( paste0("/home/dzavadska/Data/QUANTITATIVE_DATASET/PLOIDY/",  RS, FS, filter_prefix, SP, "plot4.png"), gg)
+rm(gg)
+rm(gg1)
+rm(gg2)
+gc()
+
+
+
+cov <- fread( tables[i] )
+
+df2 <- merge(cov, df, by="V1")
+  
+print( paste(
+  SP,
+   "total CDSs with polymorphisms =", length(unique(df$V1)), # length(unique(diplbcf$V1)), "ploidy2", 
+              "total number of predicted CDSs in ", RS, number_of_genes_NR90[number_of_genes_NR90$sp == SP,2]
+))
+
+
+#gg <- ggplot(df2)+geom_histogram( aes( (as.numeric(df2$V5)/df2$V2.y)), bins=100  )+geom_vline(xintercept = 1)+
+#  ggtitle(paste("major allelle, Coverage >=5, normalised by average coverage per CDS,", sp ))+theme_bw()
+#print(gg)
+#gg <- ggplot(df2)+geom_histogram( aes( (as.numeric(df2$V6)/df2$V2.y)), bins=100 )+geom_vline(xintercept = 1)+
+#  ggtitle(paste("minor allelle, Coverage >=5, normalised by average coverage per CDS,", sp ))+theme_bw()
+#print(gg)
+
+gg <- ggplot(df2)+geom_histogram( aes( (as.numeric(df2$V6)/df2$V2.y)), bins=100, alpha = 0.5, fill = "red"  )+
+geom_histogram( aes( (as.numeric(df2$V7)/df2$V2.y)), bins=100, alpha = 0.5, fill = "blue"  )+
+geom_vline(xintercept = 1)+
+  scale_x_continuous(limits = c(-1, 50) )+
+scale_y_log10()+
+  ggtitle(paste(SP ,"allele/average cov per CDS", RS, FS, filter_prefix  ))+theme_bw()
+
+ggsave( paste0("/home/dzavadska/Data/QUANTITATIVE_DATASET/PLOIDY/",  RS, FS, filter_prefix, SP, "plot2.png"), gg)
+rm(gg)
+gc() 
+
+df3 <- fread(paste0("/media/dzavadska/Elements/QUANTITATIVE_DATASET/PLOIDY/BCFTOOLS/", SP, "_", RS ,"_CDS_length.txt"), sep = " ", header = F)
+df3 <- df3[,c(1, 5)]
+df3$V1 <- str_replace(df3$V1, ">", "")
+df3$V5 <- as.numeric( str_replace(df3$V5, "len:", "") )
+df4 <- merge(df2, df3, by="V1")
+
+
+gg <- ggplot(df4)+geom_point(aes(V1, V2.y/V5.y ), size =0.05, alpha = 0.05)+
+  ggtitle(paste(SP, "SNP/length of contig", RS,FS, filter_prefix ))+theme_classic()
+
+ggsave( paste0("/home/dzavadska/Data/QUANTITATIVE_DATASET/PLOIDY/", RS, FS, filter_prefix, SP, "plot3.png"), gg)
+rm(gg)
+gc()
+
+}
+  
+  
+}
+
+
+
+
+ 
+
+  
+```
+
+##Loop fo all available pre-R settings, Test
+
+```{r}
+
+#redund_setting <- c("ORIGINAL", "NR90")
+redund_setting <- c("ORIGINAL")
+
+#filter_setting <- c("ref", "Q25")
+filter_setting <- c("Q25")
+
+
+GRID <- expand.grid(redund_setting, filter_setting)
+
+filter_prefix <- "Alrat_10minus__ALsum_13plus_"
+
+for (grid in 1:nrow(GRID)) {
+  
+  RS <- GRID$Var1[grid]
+  FS <- GRID$Var2[grid]
+  cov_per_cds_prefix <- paste0("_", RS, "_CDS_cov_perCDS_", FS, ".txt")
+  tsv_prefix <- paste0("_", RS, "_CDS_", FS, "_BCFtools_viewfiltered.tsv")
+
+  
+  ##
+  number_of_genes_NR90 <- data.frame()
+
+tables <- list.files("/media/dzavadska/Elements/QUANTITATIVE_DATASET/PLOIDY/BCFTOOLS", pattern = cov_per_cds_prefix , full.names = TRUE)
+
+for ( e in 1:length(tables) ) {
+df <- fread( tables[e] )
+tmp <- data.frame("sp" = str_replace( tables[e] , cov_per_cds_prefix , "") , "CDS_count" = length(unique(df$V1)) )
+number_of_genes_NR90 <- rbind(tmp, number_of_genes_NR90)
+}
+
+
+
+
+ploidy1 <- list.files("/media/dzavadska/Elements/QUANTITATIVE_DATASET/PLOIDY/BCFTOOLS", pattern = tsv_prefix, full.names = TRUE)
+
+for (i in 1:length(ploidy1)) {
+  SP <- str_replace( ploidy1[i] , tsv_prefix , "")
+   SP <- str_replace( SP , "/media/dzavadska/Elements/QUANTITATIVE_DATASET/PLOIDY/BCFTOOLS/" , "")
+
+df <- fread( ploidy1[i])
+
+df$sp <- str_replace( tables[i] , "_BCFtools_viewfiltered.tsv" , "")
+
+########################################################################################
+##########!!!!!!!!!!!!!!!!!!!!!  post-process FILTERING !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+########################################################################################
+
+df <- df[as.numeric(df$V6) > 0,]
+df <- df[as.numeric(df$V7) > 0,]
+
+df <- df[as.numeric(df$V6)+as.numeric(df$V7) > 12,]
+
+#order of next 2 lines matters
+df_full <- df
+df <- df[as.numeric(df$V6)/as.numeric(df$V7) < 10,]
+
+
+########################################################################################
+########################################################################################
+########################################################################################
+########################################################################################
+   SP_name <- str_replace( SP , "_HAPL" , " haploid")
+   SP_name <- str_replace( SP_name , "_DIPL" , " diploid")
+    SP_name <- str_replace( SP_name , "_TRIPL" , " triploid")
+     SP_name <- str_replace( SP_name , "_TETRAPL" , "tetraploid")
+     
+
+gg1 <- ggplot(df_full)+geom_vline(xintercept = 1, colour="red", size = 0.3)+geom_histogram(aes(as.numeric(df_full$V6)/as.numeric(df_full$V7)), bins = 300)+
+  theme_bw()+theme(axis.title = element_blank())
+
+gg2 <- ggplot(df)+geom_histogram(aes(as.numeric(df$V6)/as.numeric(df$V7)))+geom_vline(xintercept = 1, colour="red")+
+  xlim(0, 10)+ggtitle(paste( SP_name )) +xlab("allele 1 : allele 2")+theme_bw()
+  #ggtitle(paste( SP_name, "allele-1/allele-2", RS, FS, filter_prefix)) +theme_bw()
+
+
+
+
+gg <- ggdraw() +
+  draw_plot(gg2) +
+  draw_plot(gg1, x = 0.65, y = 0.65, width = 0.3, height = 0.25)
+
+
+
+ggsave( paste0("/home/dzavadska/Data/QUANTITATIVE_DATASET/PLOIDY/",  RS, FS, filter_prefix, SP, "plot1.png"), gg)
+rm(gg)
+rm(gg1)
+rm(gg2)
+gc()
+
+
+
+gg1 <- ggplot(df_full)+geom_point(aes(as.numeric(df_full$V6)/as.numeric(df_full$V7)   , as.numeric(df_full$V6)+as.numeric(df_full$V7) ), alpha = 0.005, size = 0.025  )+geom_vline(xintercept = 1)+theme_bw()+theme(axis.title = element_blank())
+
+gg2 <- ggplot(df)+geom_point(aes(as.numeric(df$V6)/as.numeric(df$V7)   , as.numeric(df$V6)+as.numeric(df$V7) ), alpha = 0.05, size = 0.1  )+geom_vline(xintercept = 1)+
+  coord_cartesian(xlim = c(0,5))+
+  ggtitle(paste( SP, RS, FS, filter_prefix ))+theme_bw()
+
+gg <- ggdraw() +
+  draw_plot(gg2) +
+  draw_plot(gg1, x = 0.7, y = 0.65, width = 0.25, height = 0.25)
+
+ggsave( paste0("/home/dzavadska/Data/QUANTITATIVE_DATASET/PLOIDY/",  RS, FS, filter_prefix, SP, "plot4.png"), gg)
+rm(gg)
+rm(gg1)
+rm(gg2)
+gc()
+
+
+
+cov <- fread( tables[i] )
+
+df2 <- merge(cov, df, by="V1")
+  
+print( paste(
+  SP,
+   "total CDSs with polymorphisms =", length(unique(df$V1)), # length(unique(diplbcf$V1)), "ploidy2", 
+              "total number of predicted CDSs in ", RS, number_of_genes_NR90[number_of_genes_NR90$sp == SP,2]
+))
+
+
+#gg <- ggplot(df2)+geom_histogram( aes( (as.numeric(df2$V5)/df2$V2.y)), bins=100  )+geom_vline(xintercept = 1)+
+#  ggtitle(paste("major allelle, Coverage >=5, normalised by average coverage per CDS,", sp ))+theme_bw()
+#print(gg)
+#gg <- ggplot(df2)+geom_histogram( aes( (as.numeric(df2$V6)/df2$V2.y)), bins=100 )+geom_vline(xintercept = 1)+
+#  ggtitle(paste("minor allelle, Coverage >=5, normalised by average coverage per CDS,", sp ))+theme_bw()
+#print(gg)
+
+gg <- ggplot(df2)+geom_histogram( aes( (as.numeric(df2$V6)/df2$V2.y)), bins=100, alpha = 0.5, fill = "red"  )+
+geom_histogram( aes( (as.numeric(df2$V7)/df2$V2.y)), bins=100, alpha = 0.5, fill = "blue"  )+
+geom_vline(xintercept = 1)+
+  scale_x_continuous(limits = c(-1, 50) )+
+scale_y_log10()+
+  ggtitle(paste(SP ,"allele/average cov per CDS", RS, FS, filter_prefix  ))+theme_bw()
+
+ggsave( paste0("/home/dzavadska/Data/QUANTITATIVE_DATASET/PLOIDY/",  RS, FS, filter_prefix, SP, "plot2.png"), gg)
+rm(gg)
+gc() 
+
+df3 <- fread(paste0("/media/dzavadska/Elements/QUANTITATIVE_DATASET/PLOIDY/BCFTOOLS/", SP, "_", RS ,"_CDS_length.txt"), sep = " ", header = F)
+df3 <- df3[,c(1, 5)]
+df3$V1 <- str_replace(df3$V1, ">", "")
+df3$V5 <- as.numeric( str_replace(df3$V5, "len:", "") )
+df4 <- merge(df2, df3, by="V1")
+
+
+gg <- ggplot(df4)+geom_point(aes(V1, V2.y/V5.y ), size =0.05, alpha = 0.05)+
+  ggtitle(paste(SP, "SNP/length of contig", RS,FS, filter_prefix ))+theme_classic()
+
+ggsave( paste0("/home/dzavadska/Data/QUANTITATIVE_DATASET/PLOIDY/", RS, FS, filter_prefix, SP, "plot3.png"), gg)
+rm(gg)
+gc()
+
+}
+  
+  
+}
+
+
+```
+
+
+# Arranging plots in pdfs
+
+```{r}
+
+#redund_setting <- c("ORIGINAL", "NR90")
+redund_setting <- c("ORIGINAL")
+#filter_setting <- c("ref", "Q25")
+filter_setting <- c("Q25")
+
+GRID <- expand.grid(redund_setting, filter_setting)
+
+filter_prefix <- "Alrat_10minus__ALsum_13plus_"
+
+
+png_files <- list.files(path = "/home/dzavadska/Data/QUANTITATIVE_DATASET/PLOIDY", pattern = ".png", full.names = TRUE)
+
+png_files <- png_files[grep(filter_prefix, png_files)]
+png_files <- png_files[grep("SPEC", png_files, invert = T)]
+
+for (grid in 1:nrow(GRID)) {
+  for (X in c(1:4)) {
+    
+  RS <- GRID$Var1[grid]
+  FS <- GRID$Var2[grid]
+
+  tmp_list <- png_files[grep( paste0(RS, FS), png_files )]
+  tmp_list <- tmp_list[grep( paste0("plot", X), tmp_list )]
+  
+  grobs <- lapply(tmp_list, function(png_file) {
+  img <- readPNG(png_file)
+  rasterGrob(img, interpolate = TRUE)
+})
+
+pdf(paste0(filter_prefix, RS, FS, "plot", X, "ALL.pdf"), width = 5, height = 11)  
+grid.arrange(grobs = grobs, ncol = 4)
+dev.off()
+  }
+  
+  
+}
+
+
+```
+
+
+
+##Gemkin special case (Loop fo all available pre-R settings, Test)
+
+```{r}
+
+redund_setting <- c("ORIGINAL", "NR90")
+
+filter_setting <- c("ref", "Q25")
+
+GRID <- expand.grid(redund_setting, filter_setting)
+
+filter_prefix <- "no_edges_GEMKIN_SPEC_Alrat_10minus__ALsum_13plus_"
+
+for (grid in 1:nrow(GRID)) {
+  
+  RS <- GRID$Var1[grid]
+  FS <- GRID$Var2[grid]
+  cov_per_cds_prefix <- paste0("Gemkin_", RS, "_CDS_cov_perCDS_", FS, ".txt")
+  tsv_prefix <- paste0("Gemkin_", RS, "_CDS_", FS, "_BCFtools_viewfiltered.tsv")
+
+  
+  ##
+  number_of_genes_NR90 <- data.frame()
+
+tables <- list.files("/media/dzavadska/Elements/QUANTITATIVE_DATASET/PLOIDY/BCFTOOLS", pattern = cov_per_cds_prefix , full.names = TRUE)
+
+for ( e in 1:length(tables) ) {
+df <- fread( tables[e] )
+tmp <- data.frame("sp" = str_replace( tables[e] , cov_per_cds_prefix , "") , "CDS_count" = length(unique(df$V1)) )
+number_of_genes_NR90 <- rbind(tmp, number_of_genes_NR90)
+}
+
+
+
+
+ploidy1 <- list.files("/media/dzavadska/Elements/QUANTITATIVE_DATASET/PLOIDY/BCFTOOLS", pattern = tsv_prefix, full.names = TRUE)
+
+for (i in 1:length(ploidy1)) {
+  SP <- str_replace( ploidy1[i] , tsv_prefix , "")
+   SP <- str_replace( SP , "/media/dzavadska/Elements/QUANTITATIVE_DATASET/PLOIDY/BCFTOOLS/" , "")
+   
+df <- fread( ploidy1[i])
+
+df$sp <- str_replace( tables[i] , "_BCFtools_viewfiltered.tsv" , "")
+
+########################################################################################
+##########!!!!!!!!!!!!!!!!!!!!!  post-process FILTERING !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+########################################################################################
+
+df <- df[as.numeric(df$V6) > 0,]
+df <- df[as.numeric(df$V7) > 0,]
+
+df <- df[as.numeric(df$V6)+as.numeric(df$V7) > 12,]
+
+#order of next 2 lines matters
+df_full <- df
+df <- df[as.numeric(df$V6)/as.numeric(df$V7) < 10,]
+
+
+########################################################################################
+########################################################################################
+########################################################################################
+
+
+
+
+cov <- fread( tables[i] )
+
+df2 <- merge(cov, df, by="V1")
+
+df3 <- fread(paste0("/media/dzavadska/Elements/QUANTITATIVE_DATASET/PLOIDY/BCFTOOLS/", "Gemkin_", RS ,"_CDS_length.txt"), sep = " ", header = F)
+df3 <- df3[,c(1, 5)]
+df3$V1 <- str_replace(df3$V1, ">", "")
+df3$V5 <- as.numeric( str_replace(df3$V5, "len:", "") )
+df4 <- merge(df2, df3, by="V1")
+
+#for full filter
+df2_full <- merge(cov, df_full, by="V1")
+df4_full <- merge(df2_full, df3, by="V1")
+
+########################################################################################
+##########!!!!!!!!!!!!!!!!!!!!! GEMKKIN SPECIAL post-process FILTERING !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+########################################################################################
+df4$tofilter <- paste0(df4$V1, df4$V2.y)
+df4_full$tofilter <- paste0(df4_full$V1, df4_full$V2.y)
+df$tofilter <- paste0(df$V1, df$V2)
+df_full$tofilter <- paste0(df_full$V1, df_full$V2)
+
+df <- df[ (df$tofilter %in% unique( df4$tofilter[df4$V2.y/df4$V5.y < 2.8] ) ), ]
+df <- df[ (df$tofilter %in% unique( df4$tofilter[df4$V2.y/df4$V5.y > 0.2] ) ) , ]
+
+df_full <- df_full[ (df_full$tofilter %in% unique( df4_full$tofilter[df4_full$V2.y/df4_full$V5.y < 2.8] ) ) , ]
+df_full <- df_full[ (df_full$tofilter %in% unique( df4_full$tofilter[df4_full$V2.y/df4_full$V5.y > 0.2] ) ) , ]
+
+
+df2 <- merge(cov, df, by="V1")
+df4 <- merge(df2, df3, by="V1")
+
+#for full filter
+df2_full <- merge(cov, df_full, by="V1")
+df4_full <- merge(df2_full, df3, by="V1")
+########################################################################################
+########################################################################################
+########################################################################################
+
+
+
+gg1 <- ggplot(df_full)+geom_vline(xintercept = 1, colour="red", size = 0.3)+geom_histogram(aes(as.numeric(df_full$V6)/as.numeric(df_full$V7)), bins = 300)+
+  theme_bw()+theme(axis.title = element_blank())
+
+gg2 <- ggplot(df)+geom_histogram(aes(as.numeric(df$V6)/as.numeric(df$V7)))+geom_vline(xintercept = 1, colour="red")+
+  xlim(0, 10)+
+  ggtitle(paste( SP, "allele-1/allele-2", RS, FS, filter_prefix)) +theme_bw()
+
+
+gg <- ggdraw() +
+  draw_plot(gg2) +
+  draw_plot(gg1, x = 0.65, y = 0.65, width = 0.3, height = 0.25)
+
+
+
+ggsave( paste0("/home/dzavadska/Data/QUANTITATIVE_DATASET/PLOIDY/",  RS, FS, filter_prefix, SP, "plot1.png"), gg)
+rm(gg)
+rm(gg1)
+rm(gg2)
+gc()
+
+
+
+gg1 <- ggplot(df_full)+geom_point(aes(as.numeric(df_full$V6)/as.numeric(df_full$V7)   , as.numeric(df_full$V6)+as.numeric(df_full$V7) ), alpha = 0.005, size = 0.025  )+geom_vline(xintercept = 1)+theme_bw()+theme(axis.title = element_blank())
+
+gg2 <- ggplot(df)+geom_point(aes(as.numeric(df$V6)/as.numeric(df$V7)   , as.numeric(df$V6)+as.numeric(df$V7) ), alpha = 0.05, size = 0.1  )+geom_vline(xintercept = 1)+
+  coord_cartesian(xlim = c(0,5))+
+  ggtitle(paste( SP, RS, FS, filter_prefix ))+theme_bw()
+
+gg <- ggdraw() +
+  draw_plot(gg2) +
+  draw_plot(gg1, x = 0.7, y = 0.65, width = 0.25, height = 0.25)
+
+ggsave( paste0("/home/dzavadska/Data/QUANTITATIVE_DATASET/PLOIDY/",  RS, FS, filter_prefix, SP, "plot4.png"), gg)
+rm(gg)
+rm(gg1)
+rm(gg2)
+gc()
+
+
+
+
+gg <- ggplot(df2)+geom_histogram( aes( (as.numeric(df2$V6)/df2$V2.y)), bins=100, alpha = 0.5, fill = "red"  )+
+geom_histogram( aes( (as.numeric(df2$V7)/df2$V2.y)), bins=100, alpha = 0.5, fill = "blue"  )+
+geom_vline(xintercept = 1)+
+  scale_x_continuous(limits = c(-1, 50) )+
+scale_y_log10()+
+  ggtitle(paste(SP ,"allele/average cov per CDS", RS, FS, filter_prefix  ))+theme_bw()
+
+ggsave( paste0("/home/dzavadska/Data/QUANTITATIVE_DATASET/PLOIDY/",  RS, FS, filter_prefix, SP, "plot2.png"), gg)
+rm(gg)
+gc() 
+
+
+gg <- ggplot(df4)+geom_point(aes(V1, V2.y/V5.y ), size =0.05, alpha = 0.05)+
+  ggtitle(paste(SP, "SNP/length of contig", RS,FS, filter_prefix ))+theme_classic()
+
+ggsave( paste0("/home/dzavadska/Data/QUANTITATIVE_DATASET/PLOIDY/", RS, FS, filter_prefix, SP, "plot3.png"), gg)
+rm(gg)
+gc()
+
+}
+  
+  
+}
+
+
+```
+
+
+
+
+
+##other test species - control for the special case  (Loop fo all available pre-R settings, Test)
+
+```{r}
+
+redund_setting <- c("ORIGINAL", "NR90")
+
+filter_setting <- c("ref", "Q25")
+
+GRID <- expand.grid(redund_setting, filter_setting)
+
+filter_prefix <- "no_edges_alltests_SPEC_Alrat_10minus__ALsum_13plus_"
+
+for (grid in 1:nrow(GRID)) {
+  
+  RS <- GRID$Var1[grid]
+  FS <- GRID$Var2[grid]
+  cov_per_cds_prefix <- paste0("_", RS, "_CDS_cov_perCDS_", FS, ".txt")
+  tsv_prefix <- paste0("_", RS, "_CDS_", FS, "_BCFtools_viewfiltered.tsv")
+
+  
+  ##
+  number_of_genes_NR90 <- data.frame()
+
+tables <- list.files("/media/dzavadska/Elements/QUANTITATIVE_DATASET/PLOIDY/BCFTOOLS", pattern = cov_per_cds_prefix , full.names = TRUE)
+
+for ( e in 1:length(tables) ) {
+df <- fread( tables[e] )
+tmp <- data.frame("sp" = str_replace( tables[e] , cov_per_cds_prefix , "") , "CDS_count" = length(unique(df$V1)) )
+number_of_genes_NR90 <- rbind(tmp, number_of_genes_NR90)
+}
+
+
+
+
+ploidy1 <- list.files("/media/dzavadska/Elements/QUANTITATIVE_DATASET/PLOIDY/BCFTOOLS", pattern = tsv_prefix, full.names = TRUE)
+
+for (i in 1:length(ploidy1)) {
+  SP <- str_replace( ploidy1[i] , tsv_prefix , "")
+   SP <- str_replace( SP , "/media/dzavadska/Elements/QUANTITATIVE_DATASET/PLOIDY/BCFTOOLS/" , "")
+   
+df <- fread( ploidy1[i])
+
+df$sp <- str_replace( tables[i] , "_BCFtools_viewfiltered.tsv" , "")
+
+########################################################################################
+##########!!!!!!!!!!!!!!!!!!!!!  post-process FILTERING !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+########################################################################################
+
+df <- df[as.numeric(df$V6) > 0,]
+df <- df[as.numeric(df$V7) > 0,]
+
+df <- df[as.numeric(df$V6)+as.numeric(df$V7) > 12,]
+
+#order of next 2 lines matters
+df_full <- df
+df <- df[as.numeric(df$V6)/as.numeric(df$V7) < 10,]
+
+
+########################################################################################
+########################################################################################
+########################################################################################
+
+
+
+
+cov <- fread( tables[i] )
+
+df2 <- merge(cov, df, by="V1")
+
+df3 <- fread(paste0("/media/dzavadska/Elements/QUANTITATIVE_DATASET/PLOIDY/BCFTOOLS/", SP, "_", RS ,"_CDS_length.txt"), sep = " ", header = F)
+df3 <- df3[,c(1, 5)]
+df3$V1 <- str_replace(df3$V1, ">", "")
+df3$V5 <- as.numeric( str_replace(df3$V5, "len:", "") )
+df4 <- merge(df2, df3, by="V1")
+
+
+
+
+########################################################################################
+##########!!!!!!!!!!!!!!!!!!!!! GEMKKIN SPECIAL post-process FILTERING !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+########################################################################################
+
+df4$tofilter <- paste0(df4$V1, df4$V2.y)
+
+df$tofilter <- paste0(df$V1, df$V2)
+df_full$tofilter <- paste0(df_full$V1, df_full$V2)
+
+df <- df[ (df$tofilter %in% unique( df4$tofilter[df4$V2.y/df4$V5.y < 2.8] ) ), ]
+df <- df[ (df$tofilter %in% unique( df4$tofilter[df4$V2.y/df4$V5.y > 0.2] ) ) , ]
+
+df_full <- df_full[ (df_full$tofilter %in% unique( df4$tofilter[df4$V2.y/df4$V5.y < 2.8] ) ) , ]
+df_full <- df_full[ (df_full$tofilter %in% unique( df4$tofilter[df4$V2.y/df4$V5.y > 0.2] ) ) , ]
+
+
+df2 <- merge(cov, df, by="V1")
+df4 <- merge(df2, df3, by="V1")
+
+########################################################################################
+########################################################################################
+########################################################################################
+
+
+
+gg1 <- ggplot(df_full)+geom_vline(xintercept = 1, colour="red", size = 0.3)+geom_histogram(aes(as.numeric(df_full$V6)/as.numeric(df_full$V7)), bins = 300)+
+  theme_bw()+theme(axis.title = element_blank())
+
+gg2 <- ggplot(df)+geom_histogram(aes(as.numeric(df$V6)/as.numeric(df$V7)))+geom_vline(xintercept = 1, colour="red")+
+  xlim(0, 10)+
+  ggtitle(paste( SP, "allele-1/allele-2", RS, FS, filter_prefix)) +theme_bw()
+
+
+gg <- ggdraw() +
+  draw_plot(gg2) +
+  draw_plot(gg1, x = 0.65, y = 0.65, width = 0.3, height = 0.25)
+
+
+
+ggsave( paste0("/home/dzavadska/Data/QUANTITATIVE_DATASET/PLOIDY/",  RS, FS, filter_prefix, SP, "plot1.png"), gg)
+rm(gg)
+rm(gg1)
+rm(gg2)
+gc()
+
+
+
+gg1 <- ggplot(df_full)+geom_point(aes(as.numeric(df_full$V6)/as.numeric(df_full$V7)   , as.numeric(df_full$V6)+as.numeric(df_full$V7) ), alpha = 0.005, size = 0.025  )+geom_vline(xintercept = 1)+theme_bw()+theme(axis.title = element_blank())
+
+gg2 <- ggplot(df)+geom_point(aes(as.numeric(df$V6)/as.numeric(df$V7)   , as.numeric(df$V6)+as.numeric(df$V7) ), alpha = 0.05, size = 0.1  )+geom_vline(xintercept = 1)+
+  coord_cartesian(xlim = c(0,5))+
+  ggtitle(paste( SP, RS, FS, filter_prefix ))+theme_bw()
+
+gg <- ggdraw() +
+  draw_plot(gg2) +
+  draw_plot(gg1, x = 0.7, y = 0.65, width = 0.25, height = 0.25)
+
+ggsave( paste0("/home/dzavadska/Data/QUANTITATIVE_DATASET/PLOIDY/",  RS, FS, filter_prefix, SP, "plot4.png"), gg)
+rm(gg)
+rm(gg1)
+rm(gg2)
+gc()
+
+
+
+
+gg <- ggplot(df2)+geom_histogram( aes( (as.numeric(df2$V6)/df2$V2.y)), bins=100, alpha = 0.5, fill = "red"  )+
+geom_histogram( aes( (as.numeric(df2$V7)/df2$V2.y)), bins=100, alpha = 0.5, fill = "blue"  )+
+geom_vline(xintercept = 1)+
+  scale_x_continuous(limits = c(-1, 50) )+
+scale_y_log10()+
+  ggtitle(paste(SP ,"allele/average cov per CDS", RS, FS, filter_prefix  ))+theme_bw()
+
+ggsave( paste0("/home/dzavadska/Data/QUANTITATIVE_DATASET/PLOIDY/",  RS, FS, filter_prefix, SP, "plot2.png"), gg)
+rm(gg)
+gc() 
+
+
+gg <- ggplot(df4)+geom_point(aes(V1, V2.y/V5.y ), size =0.05, alpha = 0.05)+
+  ggtitle(paste(SP, "SNP/length of contig", RS,FS, filter_prefix ))+theme_classic()
+
+ggsave( paste0("/home/dzavadska/Data/QUANTITATIVE_DATASET/PLOIDY/", RS, FS, filter_prefix, SP, "plot3.png"), gg)
+rm(gg)
+gc()
+
+}
+  
+  
+}
+
+
+```
+
+
+
+
+
+
+```{r}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# number of genes/SNPs stats, test species
+
+```{r}
+
+redund_setting <- c("ORIGINAL", "NR90")
+
+filter_setting <- c("ref", "Q25")
+
+GRID <- expand.grid(redund_setting, filter_setting)
+
+filter_prefix <- "genestat_Alrat_10minus__ALsum_13plus_"
+
+
+number_of_genes_ALL <- data.frame()
+
+for (grid in 1:nrow(GRID)) {
+  
+  RS <- GRID$Var1[grid]
+  FS <- GRID$Var2[grid]
+  cov_per_cds_prefix <- paste0("_", RS, "_CDS_cov_perCDS_", FS, ".txt")
+  tsv_prefix <- paste0("_", RS, "_CDS_", FS, "_BCFtools_viewfiltered.tsv")
+
+  
+  ##
+number_of_genes_NR90 <- data.frame()
+
+tables <- list.files("/media/dzavadska/Elements/QUANTITATIVE_DATASET/PLOIDY/BCFTOOLS", pattern = cov_per_cds_prefix , full.names = TRUE)
+
+for ( e in 1:length(tables) ) {
+df <- fread( tables[e] )
+tmp <- data.frame("sp" = str_replace( tables[e] , cov_per_cds_prefix , "") , "CDS_count" = length(unique(df$V1)) , "RS" = RS, "FS" = FS)
+tmp$sp <- str_replace( tmp$sp, "/media/dzavadska/Elements/QUANTITATIVE_DATASET/PLOIDY/BCFTOOLS/", "")
+number_of_genes_NR90 <- rbind(tmp, number_of_genes_NR90)
+}
+
+number_of_genes_ALL <- rbind(number_of_genes_NR90, number_of_genes_ALL)
+}
+
+number_of_genes_ALL
+number_of_genes_ALL$All_SNPs <- NA
+number_of_genes_ALL$Filtered_SNPs <- NA
+
+
+for (grid in 1:nrow(GRID)) {
+  
+  RS <- GRID$Var1[grid]
+  FS <- GRID$Var2[grid]
+  cov_per_cds_prefix <- paste0("_", RS, "_CDS_cov_perCDS_", FS, ".txt")
+  tsv_prefix <- paste0("_", RS, "_CDS_", FS, "_BCFtools_viewfiltered.tsv")
+
+
+
+ploidy1 <- list.files("/media/dzavadska/Elements/QUANTITATIVE_DATASET/PLOIDY/BCFTOOLS", pattern = tsv_prefix, full.names = TRUE)
+
+for (i in 1:length(ploidy1)) {
+  SP <- str_replace( ploidy1[i] , tsv_prefix , "")
+  SP <- str_replace( SP , "/media/dzavadska/Elements/QUANTITATIVE_DATASET/PLOIDY/BCFTOOLS/" , "")
+   
+df <- fread( ploidy1[i])
+
+All_SNPs <- length(unique(df$V1))
+########################################################################################
+##########!!!!!!!!!!!!!!!!!!!!!  post-process FILTERING !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+########################################################################################
+
+df <- df[as.numeric(df$V6) > 0,]
+df <- df[as.numeric(df$V7) > 0,]
+
+df <- df[as.numeric(df$V6)+as.numeric(df$V7) > 12,]
+
+#order of next 2 lines matters
+#df_full <- df
+df <- df[as.numeric(df$V6)/as.numeric(df$V7) < 10,]
+
+########################################################################################
+########################################################################################
+
+Filtered_SNPs <- length(unique(df$V1))
+
+
+
+index <- intersect( intersect(which(number_of_genes_ALL$RS == RS) , which(number_of_genes_ALL$FS == FS) ) , which(number_of_genes_ALL$sp == SP) )
+
+number_of_genes_ALL$All_SNPs[ index  ] <- All_SNPs
+number_of_genes_ALL$Filtered_SNPs[ index ] <- Filtered_SNPs
+
+}
+}
+
+number_of_genes_ALL
+
+
+
+ggplot(number_of_genes_ALL)+
+  geom_point( aes(All_SNPs, CDS_count, colour=sp), shape = 1, size =3)+
+  geom_point( aes(Filtered_SNPs, CDS_count, colour=sp), shape = 2, size =3)+
+  facet_wrap(~RS+FS)+theme_bw()
+  
+ggplot(number_of_genes_ALL)+
+  geom_point( aes(sp , All_SNPs/CDS_count), shape = 1, size =3)+
+  geom_point( aes(sp , Filtered_SNPs/CDS_count), shape = 2, size =3)+
+  facet_wrap(~RS+FS)+theme_bw()
+
+```
+
+
+
+
+
+
+
+
+
+
+
+# number of genes/SNPs stats, control species
+
+
+
+
+```{r}
+
+redund_setting <- c("controlORIGINAL", "controlNR90")
+
+filter_setting <- c("ref", "Q25")
+
+GRID <- expand.grid(redund_setting, filter_setting)
+
+filter_prefix <- "genestat_Alrat_10minus__ALsum_13plus_"
+
+
+number_of_genes_ALL <- data.frame()
+
+for (grid in 1:nrow(GRID)) {
+  
+  RS <- GRID$Var1[grid]
+  FS <- GRID$Var2[grid]
+  cov_per_cds_prefix <- paste0("_", RS, "_CDS_cov_perCDS_", FS, ".txt")
+  tsv_prefix <- paste0("_", RS, "_CDS_", FS, "_BCFtools_viewfiltered.tsv")
+
+  
+  ##
+number_of_genes_NR90 <- data.frame()
+
+tables <- list.files("/media/dzavadska/Elements/QUANTITATIVE_DATASET/PLOIDY/BCFTOOLS", pattern = cov_per_cds_prefix , full.names = TRUE)
+
+for ( e in 1:length(tables) ) {
+df <- fread( tables[e] )
+tmp <- data.frame("sp" = str_replace( tables[e] , cov_per_cds_prefix , "") , "CDS_count" = length(unique(df$V1)) , "RS" = RS, "FS" = FS)
+tmp$sp <- str_replace( tmp$sp, "/media/dzavadska/Elements/QUANTITATIVE_DATASET/PLOIDY/BCFTOOLS/", "")
+number_of_genes_NR90 <- rbind(tmp, number_of_genes_NR90)
+}
+
+number_of_genes_ALL <- rbind(number_of_genes_NR90, number_of_genes_ALL)
+}
+
+number_of_genes_ALL
+number_of_genes_ALL$All_SNPs <- NA
+number_of_genes_ALL$Filtered_SNPs <- NA
+
+
+for (grid in 1:nrow(GRID)) {
+  
+  RS <- GRID$Var1[grid]
+  FS <- GRID$Var2[grid]
+  cov_per_cds_prefix <- paste0("_", RS, "_CDS_cov_perCDS_", FS, ".txt")
+  tsv_prefix <- paste0("_", RS, "_CDS_", FS, "_BCFtools_viewfiltered.tsv")
+
+
+
+ploidy1 <- list.files("/media/dzavadska/Elements/QUANTITATIVE_DATASET/PLOIDY/BCFTOOLS", pattern = tsv_prefix, full.names = TRUE)
+
+for (i in 1:length(ploidy1)) {
+  SP <- str_replace( ploidy1[i] , tsv_prefix , "")
+  SP <- str_replace( SP , "/media/dzavadska/Elements/QUANTITATIVE_DATASET/PLOIDY/BCFTOOLS/" , "")
+   
+df <- fread( ploidy1[i])
+
+All_SNPs <- length(unique(df$V1))
+########################################################################################
+##########!!!!!!!!!!!!!!!!!!!!!  post-process FILTERING !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+########################################################################################
+
+df <- df[as.numeric(df$V6) > 0,]
+df <- df[as.numeric(df$V7) > 0,]
+
+df <- df[as.numeric(df$V6)+as.numeric(df$V7) > 12,]
+
+#order of next 2 lines matters
+#df_full <- df
+df <- df[as.numeric(df$V6)/as.numeric(df$V7) < 10,]
+
+########################################################################################
+########################################################################################
+
+Filtered_SNPs <- length(unique(df$V1))
+
+
+
+index <- intersect( intersect(which(number_of_genes_ALL$RS == RS) , which(number_of_genes_ALL$FS == FS) ) , which(number_of_genes_ALL$sp == SP) )
+
+number_of_genes_ALL$All_SNPs[ index  ] <- All_SNPs
+number_of_genes_ALL$Filtered_SNPs[ index ] <- Filtered_SNPs
+
+}
+}
+
+number_of_genes_ALL$ploidy <- NA
+
+number_of_genes_ALL$ploidy[ grep("HAPL", number_of_genes_ALL$sp)] <- "HAPL"
+
+number_of_genes_ALL$ploidy[ grep("DIPL", number_of_genes_ALL$sp)] <- "DIPL"
+
+ggplot(number_of_genes_ALL)+
+  geom_point( aes(All_SNPs, CDS_count, colour=sp), shape = 1, size =3)+
+  geom_point( aes(Filtered_SNPs, CDS_count, colour=sp), shape = 2, size =3)+
+  facet_wrap(~RS+FS)+theme_bw()
+  
+gg <- ggplot(number_of_genes_ALL)+
+  geom_point( aes( All_SNPs/CDS_count, sp), shape = 1, size =3)+
+  geom_point( aes( Filtered_SNPs/CDS_count, sp, colour = ploidy), shape = 2, size =3)+
+  facet_wrap(~RS+FS)+theme_bw()
+
+
+ggsave("control_CDS_counts.png", gg)
+
+```
+
+
+
+
+
+
+
+
+

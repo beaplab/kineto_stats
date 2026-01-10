@@ -1,0 +1,133 @@
+# BUSCO version is: 5.2.2 
+# The lineage dataset is: euglenozoa_odb10 (Creation date: 2024-01-08, number of genomes: 31, number of BUSCOs: 130)
+# Busco id	Status	Sequence	Score	Length	OrthoDB url	Description
+126at33682	Missing
+140at33682	Missing
+184at33682	Complete	Gene.1006::NODE_258::g.1006::m.1006	1198.1	1254	https://v10-1.orthodb.org/?query=184at33682	Helicase, C-terminal
+199at33682	Complete	Gene.420::NODE_101::g.420::m.420	2179.2	1613	https://v10-1.orthodb.org/?query=199at33682	Acetyl-CoA carboxylase
+206at33682	Complete	Gene.799::NODE_203::g.799::m.799	2493.5	1488	https://v10-1.orthodb.org/?query=206at33682	Helicase, C-terminal
+363at33682	Complete	Gene.2719::NODE_772::g.2719::m.2719	362.4	680	https://v10-1.orthodb.org/?query=363at33682	SWAP/Surp
+395at33682	Fragmented	Gene.6669::NODE_2205::g.6669::m.6669	504.8	668	https://v10-1.orthodb.org/?query=395at33682	Type II pantothenate kinase
+408at33682	Complete	Gene.714::NODE_183::g.714::m.714	608.1	1191	https://v10-1.orthodb.org/?query=408at33682	Armadillo-type fold
+442at33682	Complete	Gene.1242::NODE_326::g.1242::m.1242	1055.2	1190	https://v10-1.orthodb.org/?query=442at33682	Immunoglobulin-like fold
+454at33682	Complete	Gene.2064::NODE_560::g.2064::m.2064	635.5	962	https://v10-1.orthodb.org/?query=454at33682	Sec7 domain
+467at33682	Missing
+608at33682	Complete	Gene.3202::NODE_940::g.3202::m.3202	1025.6	966	https://v10-1.orthodb.org/?query=608at33682	DNA2/NAM7 helicase, AAA domain
+863at33682	Complete	Gene.2360::NODE_660::g.2360::m.2360	1059.2	922	https://v10-1.orthodb.org/?query=863at33682	DNA polymerase
+884at33682	Missing
+965at33682	Complete	Gene.4028::NODE_1220::g.4028::m.4028	1127.5	1020	https://v10-1.orthodb.org/?query=965at33682	P-type ATPase
+1175at33682	Complete	Gene.4668::NODE_1455::g.4668::m.4668	1140.5	1059	https://v10-1.orthodb.org/?query=1175at33682	WD40 repeat
+1207at33682	Missing
+1392at33682	Complete	Gene.7907::NODE_2674::g.7907::m.7907	743.2	763	https://v10-1.orthodb.org/?query=1392at33682	Ribonuclease H superfamily
+1408at33682	Complete	Gene.11414::NODE_4144::g.11414::m.11414	402.0	587	https://v10-1.orthodb.org/?query=1408at33682	Pseudouridine synthase, TruD
+1439at33682	Complete	Gene.5720::NODE_1841::g.5720::m.5720	590.1	772	https://v10-1.orthodb.org/?query=1439at33682	Condensin complex subunit 3
+1528at33682	Complete	Gene.8041::NODE_2734::g.8041::m.8041	202.2	436	https://v10-1.orthodb.org/?query=1528at33682	SNF2-related, N-terminal domain
+1572at33682	Complete	Gene.10604::NODE_3789::g.10604::m.10604	985.2	782	https://v10-1.orthodb.org/?query=1572at33682	Rrp44-like cold shock domain
+1732at33682	Complete	Gene.10053::NODE_3556::g.10053::m.10053	639.5	691	https://v10-1.orthodb.org/?query=1732at33682	WD40 repeat
+1814at33682	Fragmented	Gene.23591::NODE_10385::g.23591::m.23591	107.6	135	https://v10-1.orthodb.org/?query=1814at33682	Acyl-CoA binding protein, putative
+1820at33682	Missing
+1881at33682	Complete	Gene.13323::NODE_5002::g.13323::m.13323	836.6	689	https://v10-1.orthodb.org/?query=1881at33682	Tetratricopeptide-like helical domain superfamily
+1904at33682	Complete	Gene.7886::NODE_2666::g.7886::m.7886	945.2	807	https://v10-1.orthodb.org/?query=1904at33682	26S Proteasome non-ATPase regulatory subunit 1
+1927at33682	Complete	Gene.9222::NODE_3215::g.9222::m.9222	556.7	601	https://v10-1.orthodb.org/?query=1927at33682	Peroxisome biogenesis factor 1
+2035at33682	Complete	Gene.7796::NODE_2633::g.7796::m.7796	919.1	807	https://v10-1.orthodb.org/?query=2035at33682	WD40 repeat
+2058at33682	Missing
+2142at33682	Complete	Gene.5425::NODE_1731::g.5425::m.5425	598.1	917	https://v10-1.orthodb.org/?query=2142at33682	SMCs flexible hinge
+2207at33682	Missing
+2282at33682	Complete	Gene.11255::NODE_4069::g.11255::m.11255	547.7	716	https://v10-1.orthodb.org/?query=2282at33682	Importin beta-1 subunit
+2363at33682	Complete	Gene.18628::NODE_7661::g.18628::m.18628	290.9	465	https://v10-1.orthodb.org/?query=2363at33682	Ubiquitin specific protease, conserved site
+2770at33682	Complete	Gene.13211::NODE_4950::g.13211::m.13211	398.9	601	https://v10-1.orthodb.org/?query=2770at33682	Gamma tubulin complex component, C-terminal
+2874at33682	Complete	Gene.4728::NODE_1478::g.4728::m.4728	267.7	474	https://v10-1.orthodb.org/?query=2874at33682	Peptidase S59, nucleoporin
+2960at33682	Complete	Gene.9761::NODE_3435::g.9761::m.9761	380.7	571	https://v10-1.orthodb.org/?query=2960at33682	Helicase, C-terminal
+3056at33682	Complete	Gene.11245::NODE_4063::g.11245::m.11245	573.0	584	https://v10-1.orthodb.org/?query=3056at33682	MATH/TRAF domain
+3118at33682	Complete	Gene.6798::NODE_2252::g.6798::m.6798	366.3	732	https://v10-1.orthodb.org/?query=3118at33682	Tetratricopeptide repeat
+3306at33682	Missing
+3331at33682	Complete	Gene.6074::NODE_1983::g.6074::m.6074	892.2	665	https://v10-1.orthodb.org/?query=3331at33682	SNF2-related, N-terminal domain
+3344at33682	Complete	Gene.17211::NODE_6917::g.17211::m.17211	804.2	532	https://v10-1.orthodb.org/?query=3344at33682	tRNA wybutosine-synthesis
+3381at33682	Complete	Gene.13248::NODE_4966::g.13248::m.13248	978.0	644	https://v10-1.orthodb.org/?query=3381at33682	MCM domain
+3383at33682	Complete	Gene.15063::NODE_5862::g.15063::m.15063	391.1	434	https://v10-1.orthodb.org/?query=3383at33682	Tetratricopeptide repeat
+3515at33682	Fragmented	Gene.12953::NODE_4837::g.12953::m.12953	255.3	348	https://v10-1.orthodb.org/?query=3515at33682	Tetratricopeptide-like helical domain superfamily
+3545at33682	Complete	Gene.12237::NODE_4510::g.12237::m.12237	835.8	641	https://v10-1.orthodb.org/?query=3545at33682	Translation initiation factor IF- 2
+3601at33682	Complete	Gene.21612::NODE_9257::g.21612::m.21612	226.4	331	https://v10-1.orthodb.org/?query=3601at33682	NEDD8-activating enzyme E1 regulatory subunit
+3625at33682	Complete	Gene.16450::NODE_6526::g.16450::m.16450	438.4	417	https://v10-1.orthodb.org/?query=3625at33682	Ubiquitin-activating enzyme
+3647at33682	Complete	Gene.17272::NODE_6949::g.17272::m.17272	440.7	506	https://v10-1.orthodb.org/?query=3647at33682	P-loop containing nucleoside triphosphate hydrolase
+3696at33682	Missing
+3706at33682	Complete	Gene.16639::NODE_6624::g.16639::m.16639	806.8	603	https://v10-1.orthodb.org/?query=3706at33682	Arginyl tRNA synthetase N-terminal domain
+3765at33682	Missing
+3852at33682	Complete	Gene.10780::NODE_3868::g.10780::m.10780	519.9	537	https://v10-1.orthodb.org/?query=3852at33682	Zinc-binding phosphatase, putative
+3905at33682	Complete	Gene.21825::NODE_9375::g.21825::m.21825	344.4	438	https://v10-1.orthodb.org/?query=3905at33682	DEAD/DEAH box helicase domain
+4007at33682	Complete	Gene.6010::NODE_1954::g.6010::m.6010	389.0	446	https://v10-1.orthodb.org/?query=4007at33682	Pentatricopeptide repeat
+4136at33682	Complete	Gene.14565::NODE_5614::g.14565::m.14565	665.6	553	https://v10-1.orthodb.org/?query=4136at33682	CCAAT-binding factor
+4199at33682	Complete	Gene.18618::NODE_7655::g.18618::m.18618	368.1	464	https://v10-1.orthodb.org/?query=4199at33682	Cyclin-like
+4250at33682	Complete	Gene.16103::NODE_6354::g.16103::m.16103	182.7	191	https://v10-1.orthodb.org/?query=4250at33682	DNA repair metallo-beta-lactamase
+4450at33682	Complete	Gene.16381::NODE_6490::g.16381::m.16381	581.3	458	https://v10-1.orthodb.org/?query=4450at33682	WD40/YVTN repeat-like-containing domain superfamily
+4668at33682	Missing
+4718at33682	Complete	Gene.17361::NODE_7001::g.17361::m.17361	381.1	435	https://v10-1.orthodb.org/?query=4718at33682	Sec1-like protein
+4733at33682	Missing
+4838at33682	Complete	Gene.18642::NODE_7670::g.18642::m.18642	487.7	451	https://v10-1.orthodb.org/?query=4838at33682	Kinesin motor domain
+4898at33682	Complete	Gene.3991::NODE_1207::g.3991::m.3991	385.3	409	https://v10-1.orthodb.org/?query=4898at33682	Phospholipid
+5001at33682	Complete	Gene.12128::NODE_4465::g.12128::m.12128	841.3	568	https://v10-1.orthodb.org/?query=5001at33682	Peptidase M41
+5261at33682	Complete	Gene.24662::NODE_10997::g.24662::m.24662	210.7	306	https://v10-1.orthodb.org/?query=5261at33682	Ubiquitin specific protease, conserved site
+5413at33682	Complete	Gene.13691::NODE_5173::g.13691::m.13691	886.8	481	https://v10-1.orthodb.org/?query=5413at33682	GroEL-like apical domain superfamily
+5598at33682	Complete	Gene.8286::NODE_2826::g.8286::m.8286	198.7	404	https://v10-1.orthodb.org/?query=5598at33682	DnaJ domain
+5990at33682	Fragmented	Gene.23291::NODE_10213::g.23291::m.23291	110.1	240	https://v10-1.orthodb.org/?query=5990at33682	R3H domain
+5994at33682	Complete	Gene.8627::NODE_2964::g.8627::m.8627	438.6	492	https://v10-1.orthodb.org/?query=5994at33682	MutL, C-terminal, dimerisation
+6050at33682	Complete	Gene.20107::NODE_8443::g.20107::m.20107	632.3	462	https://v10-1.orthodb.org/?query=6050at33682	Protein kinase domain
+6408at33682	Complete	Gene.22671::NODE_9851::g.22671::m.22671	515.0	406	https://v10-1.orthodb.org/?query=6408at33682	ABC transporter-like
+6527at33682	Missing
+6538at33682	Missing
+6660at33682	Complete	Gene.26133::NODE_11876::g.26133::m.26133	517.6	314	https://v10-1.orthodb.org/?query=6660at33682	Tubulin
+6795at33682	Missing
+6863at33682	Fragmented	Gene.24687::NODE_11011::g.24687::m.24687	158.2	161	https://v10-1.orthodb.org/?query=6863at33682	Hypotheticalprotein-conserved
+6875at33682	Complete	Gene.13446::NODE_5055::g.13446::m.13446	356.9	546	https://v10-1.orthodb.org/?query=6875at33682	Zinc finger, ZZ-type
+7001at33682	Missing
+7043at33682	Missing
+7187at33682	Complete	Gene.24172::NODE_10715::g.24172::m.24172	414.1	401	https://v10-1.orthodb.org/?query=7187at33682	Pseudouridine synthase I, TruA
+7327at33682	Complete	Gene.19606::NODE_8193::g.19606::m.19606	234.6	283	https://v10-1.orthodb.org/?query=7327at33682	Cytochrome B561-related
+7368at33682	Complete	Gene.25381::NODE_11413::g.25381::m.25381	329.9	333	https://v10-1.orthodb.org/?query=7368at33682	Zinc finger, CCCH-type
+7401at33682	Complete	Gene.35265::NODE_18097::g.35265::m.35265	103.8	233	https://v10-1.orthodb.org/?query=7401at33682	3-oxo-5-alpha-steroid 4-dehydrogenase, C-terminal
+7654at33682	Missing
+7657at33682	Complete	Gene.23870::NODE_10546::g.23870::m.23870	671.9	404	https://v10-1.orthodb.org/?query=7657at33682	Nop domain
+7736at33682	Complete	Gene.25240::NODE_11332::g.25240::m.25240	304.6	347	https://v10-1.orthodb.org/?query=7736at33682	Peptidylprolyl isomerase
+7778at33682	Missing
+7783at33682	Complete	Gene.25588::NODE_11538::g.25588::m.25588	558.1	372	https://v10-1.orthodb.org/?query=7783at33682	Peptidase M18
+7907at33682	Missing
+8009at33682	Fragmented	Gene.18112::NODE_7384::g.18112::m.18112	243.7	321	https://v10-1.orthodb.org/?query=8009at33682	GTP binding domain
+8369at33682	Complete	Gene.24270::NODE_10772::g.24270::m.24270	314.6	283	https://v10-1.orthodb.org/?query=8369at33682	DNA glycosylase
+8553at33682	Fragmented	Gene.29352::NODE_13888::g.29352::m.29352	60.0	179	https://v10-1.orthodb.org/?query=8553at33682	Sister chromatid cohesion protein Dcc1
+9163at33682	Complete	Gene.24181::NODE_10722::g.24181::m.24181	68.6	240	https://v10-1.orthodb.org/?query=9163at33682	23S rRNA (Cytosine1962-C5)-methyltransferase
+9208at33682	Complete	Gene.12745::NODE_4730::g.12745::m.12745	338.6	474	https://v10-1.orthodb.org/?query=9208at33682	ATPase, AAA-type, core
+9307at33682	Complete	Gene.12670::NODE_4700::g.12670::m.12670	527.2	337	https://v10-1.orthodb.org/?query=9307at33682	Flap endonuclease 1
+9509at33682	Complete	Gene.22737::NODE_9886::g.22737::m.22737	266.5	293	https://v10-1.orthodb.org/?query=9509at33682	Clathrin coat assembly protein
+9959at33682	Complete	Gene.34037::NODE_17181::g.34037::m.34037	325.1	269	https://v10-1.orthodb.org/?query=9959at33682	Methyltransferase domain
+9973at33682	Complete	Gene.21743::NODE_9333::g.21743::m.21743	176.7	327	https://v10-1.orthodb.org/?query=9973at33682	GTP binding domain
+10092at33682	Complete	Gene.28373::NODE_13255::g.28373::m.28373	132.5	183	https://v10-1.orthodb.org/?query=10092at33682	Atypical dual-specificity phosphatase Siw14-like
+10095at33682	Missing
+10140at33682	Fragmented	Gene.21083::NODE_8973::g.21083::m.21083	210.4	221	https://v10-1.orthodb.org/?query=10140at33682	PSP, proline-rich
+10898at33682	Missing
+10958at33682	Complete	Gene.33881::NODE_17065::g.33881::m.33881	360.4	240	https://v10-1.orthodb.org/?query=10958at33682	Ribosomal RNA large subunit methyltransferase E
+10995at33682	Complete	Gene.29710::NODE_14133::g.29710::m.29710	320.2	272	https://v10-1.orthodb.org/?query=10995at33682	Hypotheticalprotein-conserved
+11178at33682	Complete	Gene.26441::NODE_12070::g.26441::m.26441	237.7	314	https://v10-1.orthodb.org/?query=11178at33682	Armadillo-like helical
+11334at33682	Complete	Gene.31111::NODE_15074::g.31111::m.31111	392.7	271	https://v10-1.orthodb.org/?query=11334at33682	26S proteasome non-ATPase regulatory subunit 3
+11337at33682	Complete	Gene.31835::NODE_15583::g.31835::m.31835	572.5	314	https://v10-1.orthodb.org/?query=11337at33682	Protein kinase domain
+11665at33682	Complete	Gene.15787::NODE_6207::g.15787::m.15787	273.1	495	https://v10-1.orthodb.org/?query=11665at33682	Domain of unknown function DUF4205
+12323at33682	Missing
+12497at33682	Missing
+12533at33682	Fragmented	Gene.34357::NODE_17418::g.34357::m.34357	151.7	178	https://v10-1.orthodb.org/?query=12533at33682	Hypotheticalprotein-conserved
+12653at33682	Complete	Gene.27927::NODE_12977::g.27927::m.27927	204.0	294	https://v10-1.orthodb.org/?query=12653at33682	DTW
+12778at33682	Missing
+12968at33682	Complete	Gene.3343::NODE_988::g.3343::m.3343	304.8	313	https://v10-1.orthodb.org/?query=12968at33682	DnaJ domain
+13007at33682	Complete	Gene.23090::NODE_10098::g.23090::m.23090	290.7	290	https://v10-1.orthodb.org/?query=13007at33682	Tetratricopeptide repeat
+13081at33682	Missing
+13169at33682	Complete	Gene.31660::NODE_15456::g.31660::m.31660	250.3	241	https://v10-1.orthodb.org/?query=13169at33682	Mitochondrial carrier protein
+13745at33682	Complete	Gene.12144::NODE_4473::g.12144::m.12144	42.1	209	https://v10-1.orthodb.org/?query=13745at33682	Zinc finger, CCHC-type
+13994at33682	Complete	Gene.14445::NODE_5551::g.14445::m.14445	296.0	276	https://v10-1.orthodb.org/?query=13994at33682	Beta-1,4-N-acetylglucosaminyltransferase
+14291at33682	Missing
+14669at33682	Complete	Gene.26873::NODE_12338::g.26873::m.26873	266.4	289	https://v10-1.orthodb.org/?query=14669at33682	XPC-binding domain
+14798at33682	Missing
+15735at33682	Complete	Gene.34244::NODE_17330::g.34244::m.34244	207.1	193	https://v10-1.orthodb.org/?query=15735at33682	Hypotheticalprotein-conserved
+15864at33682	Complete	Gene.35576::NODE_18332::g.35576::m.35576	73.5	168	https://v10-1.orthodb.org/?query=15864at33682	Ankyrin repeat-containing domain
+16343at33682	Complete	Gene.32923::NODE_16349::g.32923::m.32923	136.6	131	https://v10-1.orthodb.org/?query=16343at33682	Winged helix-like DNA-binding domain superfamily
+16629at33682	Complete	Gene.36102::NODE_18729::g.36102::m.36102	261.0	193	https://v10-1.orthodb.org/?query=16629at33682	Ribosome biogenesis protein
+16817at33682	Complete	Gene.38915::NODE_21051::g.38915::m.38915	149.8	158	https://v10-1.orthodb.org/?query=16817at33682	G10 protein
+17005at33682	Complete	Gene.28133::NODE_13104::g.28133::m.28133	200.7	178	https://v10-1.orthodb.org/?query=17005at33682	Guanylate kinase-like domain
+19201at33682	Complete	Gene.36632::NODE_19144::g.36632::m.36632	164.9	124	https://v10-1.orthodb.org/?query=19201at33682	Peptidyl-tRNA hydrolase II domain superfamily

@@ -1,0 +1,162 @@
+---
+title: "Untitled"
+author: "Zavadska Daryna"
+date: "2025-05-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+library(data.table)
+library(ggplot2)
+library(reshape2)
+#library(tidyverse)
+library(dplyr)
+library(plyr)
+library(microshades)
+library(scales)
+library(ggbreak) 
+library(patchwork)
+library(ggpubr)
+
+library(gplots)
+
+library(ggforce)
+library(aplot)
+library("gridExtra") 
+library(grid)
+library(cowplot)
+
+library(tidyr)
+library(stringr)
+
+```
+
+#first batch
+
+```{r}
+
+
+tables <- list.files(pattern = "BUSCO_EUGL.tsv")
+complete <- data.frame()
+
+for ( i in 1:length(tables)) {
+  
+df <- fread( tables[i], skip=2 , sep = "\t")
+df$sp <- str_replace(tables[i], "BUSCO_EUGL.tsv", "")
+
+#print( tables[i] )
+#print( df[grep("DNA polymerase", df$Description),] )  
+
+tmp_complete <- df[grep("Complete", df$Status),]
+complete <- rbind(complete, tmp_complete)
+
+}
+
+
+complete
+  
+```
+
+
+```{r}
+
+present <- data.frame()
+
+for ( i in unique(complete$Description)) {
+  
+  tmp <- complete[grep(i, complete$Description), c(2,6, 7, 8)]
+  
+  if( length(  grep("Complete", tmp$Status)) >= 8 ){
+      present <- rbind( present, tmp )
+  }
+
+}
+
+complete_shared_all_sp <- present[!duplicated(present$Description),c(2,3)]
+
+fwrite( complete_shared_all_sp , "complete_shared_all_sp.txt")
+
+fwrite( complete[grep("Ribonuclease H superfamily", complete$Description)] , "RNAse_H_NR90.txt")
+
+fwrite( complete[grep("Nop domain", complete$Description)] , "Nop_NR90.txt")
+
+fwrite( complete[grep("NEDD8-activating enzyme E1 regulatory subunit", complete$Description)] , "NEDD8_NR90.txt")
+
+fwrite( complete[grep("Peptidase M41", complete$Description)] , "PepM41_NR90.txt")
+
+fwrite( complete[grep("Peptidase M18", complete$Description)] , "PepM18_NR90.txt")
+
+fwrite( complete[grep("Clathrin coat assembly protein", complete$Description)] , "CCA_NR90.txt")
+```
+
+
+
+
+
+
+```{r}
+
+
+tables <- list.files(pattern = "BUSCO_EUGL_original.tsv")
+complete <- data.frame()
+
+for ( i in 1:length(tables)) {
+  
+df <- fread( tables[i], skip=2 , sep = "\t")
+df$sp <- str_replace(tables[i], "BUSCO_EUGL.tsv", "")
+
+#print( tables[i] )
+#print( df[grep("DNA polymerase", df$Description),] )  
+
+tmp_complete <- df[grep("Complete", df$Status),]
+complete <- rbind(complete, tmp_complete)
+
+}
+
+
+complete
+  
+```
+
+
+```{r}
+
+present <- data.frame()
+
+for ( i in unique(complete$Description)) {
+  
+  tmp <- complete[grep(i, complete$Description), c(2,6, 7, 8)]
+  
+  if( length(  grep("Complete", tmp$Status)) >= 8 ){
+      present <- rbind( present, tmp )
+  }
+
+}
+
+complete_shared_all_sp <- present[!duplicated(present$Description),c(2,3)]
+
+fwrite( complete_shared_all_sp , "complete_shared_all_sp_original.txt")
+
+
+```
+
+
+
+
+```{r}
+
+fwrite( complete[grep("Ribonuclease H superfamily", complete$Description)] , "RNAse_H_original.txt")
+
+```
+
+
+
+
+
+
