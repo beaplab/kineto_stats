@@ -1,0 +1,1127 @@
+---
+title: "Untitled"
+author: "Zavadska Daryna"
+date: "2025-10-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library("tidyverse")
+library("ggplot2")
+library("data.table")
+library("scales")
+library("ggforce")
+library("dgof")
+library("remotes")
+library("smmr")
+#library("coin")
+
+#library("rcompanion")
+
+library("agricolae")
+library("microshades")
+library("gridExtra")
+
+
+library(ggridges)
+library(cluster)    # clustering algorithms
+library('EnvStats') #for iqr
+
+library(coin)
+library(FSA)
+library(RVAideMemoire)
+
+
+library(mblm)
+library(lmtest)
+library(psych)
+library(mblm)
+library(quantreg)
+library(rcompanion)
+library(mgcv)
+library(lmtest)
+library(Rfit)
+library(RColorBrewer)
+
+```
+
+
+
+# !! FUNCTIONS
+functions differ somewhat from the ones in regression script, athough they are quite similar. Take care to use ones from this script.
+
+
+### median estimation, with possibility to account for ploidy cluster (i.e. estimate separate medians for 1n and n ploidy clusters)
+
+```{r}
+
+
+predictedbp_median_estimator <- function(test_kinetos_all_clust, subset_for_median_estimation = c("ploidy__exp_series_date", "ploidy__slidedate", "ploidy", "slidedate", "exp_series_date"), BS_replicates = 5000 ) {
+
+median_summary_regressed <- data.frame()
+
+if (subset_for_median_estimation %in%  c("ploidy__exp_series_date", "ploidy__slidedate", "ploidy", "slidedate", "exp_series_date") == FALSE) {
+  stop("subset_for_median_estimation must be one of: 'ploidy__exp_series_date', 'ploidy__slidedate', 'ploidy', 'slidedate', 'exp_series_date'")
+  
+}
+group_vars <- switch(
+  subset_for_median_estimation,
+  "ploidy" = c("ploidy_clust"),
+  "slidedate"  = c("exp_series_date", "file_prefix"),
+  "exp_series_date"   = c("exp_series_date"),
+  "ploidy__exp_series_date" = c("ploidy_clust", "exp_series_date"),
+  "ploidy__slidedate" = c("ploidy_clust", "exp_series_date", "file_prefix")
+)
+
+
+
+test_kinetos_all_clust <- data.frame(test_kinetos_all_clust)
+
+
+grouped_data <- split(test_kinetos_all_clust, test_kinetos_all_clust[group_vars])
+
+# Loop through each group
+for (group_name in names(grouped_data)) {
+  
+  group_df <- grouped_data[[group_name]]
+  
+
+
+  # debug
+  #print(paste("Processing:", paste(keys, collapse = ", ")))
+
+  for (reger_type in unique(group_df$suns_for_clust)) {
+  for (species in unique(group_df$est_sp)) {
+    
+   tmp <- group_df[group_df$suns_for_clust == reger_type, ]
+   tmp <- tmp[tmp$est_sp == species,]
+      #debug
+    # print(unique(tmp$sp))
+   #  print( length(unique(tmp$cell_coord))==nrow(tmp) )
+  if (nrow(tmp)==0) next
+     if (group_vars == "ploidy__slidedate" & nrow(tmp)<=2) next
+   
+   BS <- groupwiseMedian(bp_exp_ploidy_corr~1, tmp, R = BS_replicates)
+   
+   MS <- data.frame("sp" = species, 
+                    #"file_prefix" = paste( unique(tmp$file_prefix) ), 
+                    #"exp_series_date" = unique(tmp$exp_series_date), 
+                    "MEDIAN_int" = median(tmp$nucl_sum_int),
+                    
+                    "MEDIAN_bp_exp" = median(tmp$bp_exp_ploidy_corr), 
+                    "quant_lower" = quantile((tmp$bp_exp_ploidy_corr))[2],
+                    "quant_higher" = quantile((tmp$bp_exp_ploidy_corr))[4],
+                    
+                    #older version below
+                   # "mean_lower" = mean(as.numeric(tmp$lower)), 
+                   # "mean_higher" = mean(as.numeric(tmp$higher)),  
+                   
+                  "mean_lower" =  BS$Bca.lower ,
+                   "mean_higher" = BS$Bca.upper ,
+                    "method"=reger_type, "if_test_sp" = unique(tmp$if_test_sp), 
+                    #"ploidy" = unique(tmp$ploidy_clust), 
+                    "cell_count"=length(unique(tmp$cell_coord)), 
+                    "clustered_BY" = subset_for_median_estimation, 
+                    "ploidy_clust" = paste( unique(tmp$ploidy_clust) ) )
+   
+   
+   MS$set_for_median <- paste( unique( tmp[, group_vars, drop=TRUE] ), collapse = "__")
+   
+   for ( i in c( 1:length(str_split(unique(MS$clustered_BY), "__", simplify = T)) ) ){
+        MS[, str_split(unique(MS$clustered_BY), "__", simplify = T)[1,i] ] <- str_split(unique(MS$set_for_median), "__", simplify = T)[i]
+   }
+
+   
+   
+   median_summary_regressed <- rbind(median_summary_regressed, MS) 
+
+  
+  }}  
+  
+ 
+  }
+
+return(median_summary_regressed)
+}
+
+
+
+```
+
+
+
+
+```{r}
+
+predictedbp_mean_estimator_OLD <- function(test_kinetos_all_clust, subset_for_median_estimation = c("ploidy__exp_series_date", "ploidy__slidedate", "ploidy", "slidedate", "exp_series_date")  ) {
+
+median_summary_regressed <- data.frame()
+
+if (subset_for_median_estimation %in%  c("ploidy__exp_series_date", "ploidy__slidedate", "ploidy", "slidedate", "exp_series_date") == FALSE) {
+  stop("subset_for_median_estimation must be one of: 'ploidy__exp_series_date', 'ploidy__slidedate', 'ploidy', 'slidedate', 'exp_series_date'")
+  
+}
+group_vars <- switch(
+  subset_for_median_estimation,
+  "ploidy" = c("ploidy_clust"),
+  "slidedate"  = c("exp_series_date", "file_prefix"),
+  "exp_series_date"   = c("exp_series_date"),
+  "ploidy__exp_series_date" = c("ploidy_clust", "exp_series_date"),
+  "ploidy__slidedate" = c("ploidy_clust", "exp_series_date", "file_prefix")
+)
+
+
+
+test_kinetos_all_clust <- data.frame(test_kinetos_all_clust)
+
+
+grouped_data <- split(test_kinetos_all_clust, test_kinetos_all_clust[group_vars])
+
+# Loop through each group
+for (group_name in names(grouped_data)) {
+  
+  group_df <- grouped_data[[group_name]]
+  
+
+
+  # debug
+  #print(paste("Processing:", paste(keys, collapse = ", ")))
+
+  for (reger_type in unique(group_df$suns_for_clust)) {
+  for (species in unique(group_df$est_sp)) {
+    
+   tmp <- group_df[group_df$suns_for_clust == reger_type, ]
+   tmp <- tmp[tmp$est_sp == species,]
+      #debug
+    # print(unique(tmp$sp))
+   #  print( length(unique(tmp$cell_coord))==nrow(tmp) )
+  if (nrow(tmp)==0) next
+   
+   MS <- data.frame("sp" = species, 
+                    #"file_prefix" = paste( unique(tmp$file_prefix) ), 
+                    #"exp_series_date" = unique(tmp$exp_series_date), 
+                    "MEDIAN_int" = mean(tmp$nucl_sum_int),
+                    
+                    "MEDIAN_bp_exp" = mean(tmp$bp_exp_ploidy_corr), 
+                    "quant_lower" =  mean(tmp$bp_exp_ploidy_corr) - sd(tmp$bp_exp_ploidy_corr)/sqrt(length(unique(tmp$cell_coord))) ,
+                    "quant_higher" = mean(tmp$bp_exp_ploidy_corr) + sd(tmp$bp_exp_ploidy_corr)/sqrt(length(unique(tmp$cell_coord))),
+                    
+                    "mean_lower" = mean(as.numeric(tmp$lower)), 
+                    "mean_higher" = mean(as.numeric(tmp$higher)),  
+                    "method"=reger_type, "if_test_sp" = unique(tmp$if_test_sp), 
+                    #"ploidy" = unique(tmp$ploidy_clust), 
+                    "cell_count"=length(unique(tmp$cell_coord)), 
+                    "clustered_BY" = subset_for_median_estimation, 
+                    "ploidy_clust" = paste( unique(tmp$ploidy_clust) ) )
+   
+   
+   MS$set_for_median <- paste( unique( tmp[, group_vars, drop=TRUE] ), collapse = "__")
+   
+   for ( i in c( 1:length(str_split(unique(MS$clustered_BY), "__", simplify = T)) ) ){
+        MS[, str_split(unique(MS$clustered_BY), "__", simplify = T)[1,i] ] <- str_split(unique(MS$set_for_median), "__", simplify = T)[i]
+   }
+
+   
+   
+   median_summary_regressed <- rbind(median_summary_regressed, MS) 
+
+  
+  }}  
+  
+ 
+  }
+
+return(median_summary_regressed)
+}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#Testing intensistis on the control species - if equal across series
+
+### statistical tests for differences between series, within ploidy cluster 1n and selected setting
+
+```{r}
+
+
+test_kinetos_all_clust <-fread("separate_cells_test_kinetos_all_clust.csv")
+plot_control_cells <- test_kinetos_all_clust[test_kinetos_all_clust$if_test_sp == "CONTROL_species",]
+
+plot_control_cells_filt_1n <- data.frame(plot_control_cells[plot_control_cells$ploidy_clust == "1n",])
+#plot_kin_cells_filt_1n <- data.frame(plot_kin_cells_filt)
+
+for (sp in unique(plot_control_cells_filt_1n$est_sp)) {
+  print(sp)
+  data <- plot_control_cells_filt_1n[plot_control_cells_filt_1n$suns_for_clust == "est_sp  series",]
+  data <- data[data$est_sp == sp,]
+  
+ # print(unique(data$est_sp))
+ # print( kruskal.test(as.numeric(nucl_sum_int)~ as.factor(exp_series_date), data ) )
+  
+  if (length(unique(data$exp_series_date)) >2 ) {
+  #    print( dunnTest(as.numeric(nucl_sum_int)~ as.factor(exp_series_date), data) ) 
+    }
+
+}
+
+
+```
+
+# SET INPUT 
+
+```{r}
+global_subs <- "est_sp  ALL"
+short_subs <- "est_sp"
+```
+
+
+
+#INITIAL CHECK
+
+### Reading output, assigning correct kDNA/nucleus categories
+```{r}
+
+test_kinetos_all_clust <-fread("separate_cells_test_kinetos_all_clust.csv")
+
+
+test_kinetos_all_clust$est_par <- NA
+test_kinetos_all_clust$est_par[grep("nucl_df", test_kinetos_all_clust$est_sp)] <- "nuclear(SUCKS)"
+test_kinetos_all_clust$est_par[grep("KINKIN_nuclDNA", test_kinetos_all_clust$est_sp)] <- "kDNA"
+test_kinetos_all_clust$est_par[grep("_KINkDNA_df", test_kinetos_all_clust$est_sp)] <- "nuclearDNA_kineto"
+
+#!!! D44 + Allob EXCEPTION
+test_kinetos_all_clust$est_par[grep("Allob_KINkDNA_df|D44_KINkDNA_df", test_kinetos_all_clust$est_sp) ] <- "kDNA"
+
+test_kinetos_all_clust$est_par[grep("Allob_KINKIN_nuclDNA|D44_KINKIN_nuclDNA", test_kinetos_all_clust$est_sp) ] <- "nuclearDNA_kineto"
+
+
+test_kinetos_all_clust$est_par[intersect(grep("Gemkin_KINkDNA_df", test_kinetos_all_clust$est_sp), grep("26092025", test_kinetos_all_clust$exp_series_date)) ] <- "kDNA"
+test_kinetos_all_clust$est_par[intersect(grep("Gemkin_KINKIN_nuclDNA", test_kinetos_all_clust$est_sp), grep("26092025", test_kinetos_all_clust$exp_series_date)) ] <- "nuclearDNA_kineto"
+
+
+#test_kinetos_all_clust$est_par[intersect( which(test_kinetos_all_clust$est_par=="TMP"), grep("D44|Allob", test_kinetos_all_clust$test_species) )] <- "nuclearDNA_kineto"
+#!!! D44 + Allob EXCEPTION
+test_kinetos_all_clust$est_sp <- as.factor(paste0(test_kinetos_all_clust$sp, test_kinetos_all_clust$est_par))
+
+
+plot_kin_cells <- test_kinetos_all_clust[test_kinetos_all_clust$if_test_sp == "TEST_kineto",]
+plot_kin_cells <- plot_kin_cells[plot_kin_cells$est_par != "nuclear(SUCKS)",]
+
+
+test_kinetos_all_clust[grep("INU_", test_kinetos_all_clust$est_sp),]
+
+```
+
+
+## visualise series which could be wrong
+(work on it later)
+
+```{r}
+plot_control_cells <- test_kinetos_all_clust[test_kinetos_all_clust$if_test_sp == "CONTROL_species",]
+plot_control_cells <- plot_control_cells[plot_control_cells$sp != "Cruz"]
+
+
+#print(gg)
+
+# for the specific regression+clustering setting used
+ggplot(plot_control_cells[plot_control_cells$suns_for_clust == global_subs], aes(as.factor(.data[["exp_series_date"]]), nucl_sum_int))+
+  geom_point(aes( colour=as.factor(.data[["exp_series_date"]]), shape = sp), size =1, alpha = 0.2, position=position_jitter(height=0.05, width=0))+
+   #geom_line(aes( colour=as.factor(exp_series_date)))+
+  theme_bw()+  ggtitle("Control species")+#theme(axis.text.x = element_text(angle = 90))+
+  facet_wrap(~as.factor(est_sp))+
+   scale_y_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2), breaks = 2^(19:40))
+
+#print(gg)
+```
+
+
+
+## Plotting Efron's Pseudo-R-squared, SE of regression coefficient, and p-value. 
+Can be used later as a criterion for filtering out slides.
+
+```{r,  echo=TRUE, message=FALSE, warning=FALSE}
+
+test_kinetos_all_clust1 <- fread("reg_metrics_test_kinetos_all_clust.csv")
+
+ggplot(test_kinetos_all_clust1, aes( suns_for_clust , coeficcient) )+ 
+  geom_violin()+ 
+  geom_boxplot(alpha =0.2, width = 0.2)+
+  #geom_point(aes(colour = species_out),size =4, alpha = 0.5,  position=position_jitter(height=0, width=0.2, seed = 123) )+
+   geom_pointrange(aes(ymin=as.numeric(coeficcient-SE), ymax=as.numeric(coeficcient+SE), shape = test_species , colour = slidedate),  linewidth=1, alpha=0.5, position=position_jitter(height=0, width=0.2, seed = 123))+
+  theme_linedraw()+theme(axis.text.x = element_text(angle =90))+
+   theme(legend.position = "none")+
+   ggtitle("Coefficients of regressions +/- SE (colour = slidedate)")
+ 
+
+ 
+##save the same plot, but with the legend - to spot suspicious slides/species 
+ gg <- ggplot(test_kinetos_all_clust1, aes( suns_for_clust , coeficcient) )+ geom_violin()+ geom_boxplot(alpha =0.2, width = 0.2)+
+  #geom_point(aes(colour = species_out),size =4, alpha = 0.5,  position=position_jitter(height=0, width=0.2, seed = 123) )+
+   geom_pointrange(aes(ymin=as.numeric(coeficcient-SE), ymax=as.numeric(coeficcient+SE), shape = test_species , colour = slidedate),  linewidth=1, alpha=0.5, position=position_jitter(height=0, width=0.2, seed = 123))+
+  theme_linedraw()+theme(axis.text.x = element_text(angle =90))+
+   #theme(legend.position = "bottom")+
+   ggtitle("Coefficients of regressions +/- SE (colour = slidedate)")
+
+ggsave("coeff_single_plot_comp_KINETO.png", height = 20, width = 50, unit ="cm", gg)
+
+
+ggplot(test_kinetos_all_clust1, aes( suns_for_clust , as.numeric(R2)) )+
+  geom_violin()+
+   geom_point(aes(colour = test_species), alpha = 0.5, position=position_jitter(width=0.2, height = 0))+
+  theme_linedraw()+theme(axis.text.x = element_text(angle =90))+
+   #theme(legend.position = "bottom")+
+   ggtitle("Efron's pseudo R-squared, test KINETOS")
+
+ 
+ggplot(test_kinetos_all_clust1, aes( suns_for_clust , as.numeric(SE)) )+
+  geom_violin()+
+   geom_point(aes(colour = test_species), alpha = 0.5, position=position_jitter(width=0.2, height = 0))+
+  theme_linedraw()+theme(axis.text.x = element_text(angle =90))+
+   #theme(legend.position = "bottom")+
+   ggtitle("SE, test KINETOS")
+
+ 
+which(as.numeric(test_kinetos_all_clust1$pvalue) > 0.05)
+
+ggplot(test_kinetos_all_clust1, aes( suns_for_clust , as.numeric(pvalue)) )+
+  geom_violin()+
+   geom_point(aes(colour = test_species), alpha = 0.5, position=position_jitter(width=0.2, height = 0))+
+  theme_linedraw()+theme(axis.text.x = element_text(angle =90))+
+   #theme(legend.position = "bottom")+
+  #scale_y_continuous(labels = abs, limits = c(0, 100))+
+   ggtitle("p-value, test KINETOS")
+
+
+```
+
+
+
+
+## Ploidy clusters vs (!!!) raw intensities of nuclei/kDNA, chosen setting
+### to visualise obvious outliers subject to filtration. Note the log2 scales!!!!
+
+```{r}
+
+plot_kin_cells_filt_1reg <- plot_kin_cells[plot_kin_cells$suns_for_clust == global_subs]
+#nrow(plot_kin_cells_filt_1reg)
+#length(unique(plot_kin_cells_filt_1reg$cell_coord))
+
+ggplot(plot_kin_cells_filt_1reg[plot_kin_cells_filt_1reg$est_par == "kDNA"], aes(interaction(ploidy_clust, slidedate, sp), nucl_sum_int))+
+  geom_point(aes( colour=sp, shape = ploidy_clust ), size =2, alpha = 0.5 , position=position_jitter(height=0, width=0.2))+
+  geom_violin(alpha = 0)+
+  geom_boxplot( alpha = 0)+
+  theme_bw()+ ggtitle("Predicted kDNA")+theme(axis.text.x = element_blank())+
+  facet_wrap(~suns_for_clust)+
+   scale_y_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2), breaks = 2^(19:40))
+
+ggplot(plot_kin_cells_filt_1reg[plot_kin_cells_filt_1reg$est_par == "nuclearDNA_kineto"], aes(interaction(ploidy_clust, slidedate, sp), nucl_sum_int))+
+  geom_point(aes( colour=sp, shape = ploidy_clust ), size =2, alpha = 0.5, position=position_jitter(height=0, width=0.2))+
+  geom_violin(alpha = 0)+
+  geom_boxplot( alpha = 0)+
+  theme_bw()+ ggtitle("Predicted nuclear DNA of kinetoplastids")+theme(axis.text.x = element_blank())+
+  #facet_wrap(~slidedate)+
+   scale_y_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2), breaks = 2^(19:40))
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+#FILTERING MANUALLY BASED ON THE GRAPHS ABOVE
+
+### removing shit cells
+
+```{r}
+
+# bad_coord <- plot_kin_cells$cell_coord[ intersect(which(plot_kin_cells$est_sp == "Rhyncho_KINkDNA") , which(plot_kin_cells$nucl_sum_int < 2^21) ) ]
+bad_coord <- plot_kin_cells$cell_coord[ plot_kin_cells$est_sp == "D44_KINnuclearDNA_kineto" & plot_kin_cells$nucl_sum_int < 2^22 ]
+
+plot_kin_cells_filt <- plot_kin_cells[ !plot_kin_cells$cell_coord %in% unique(bad_coord), ]
+
+```
+
+### BY Efron's Pseudo-R-squared, SE of regression coefficient, and p-value, common sense, etc.
+
+```{r}
+
+#plot_kin_cells_filt <- plot_kin_cells_filt[plot_kin_cells_filt$suns_for_clust == global_suns,]
+
+#plot_kin_cells_filt <- plot_kin_cells_filt[plot_kin_cells_filt$SE < 3,]
+#plot_kin_cells_filt <- plot_kin_cells_filt[plot_kin_cells_filt$R2 > 0.7,]
+plot_kin_cells_filt <- plot_kin_cells_filt[plot_kin_cells_filt$pvalue < 0.05,]
+
+#unique(plot_kin_cells_filt$file_prefix[grep("Rhyncho_KIN est_sp slidedate", plot_kin_cells_filt$regression_set)])
+
+```
+
+
+### By series-species combinations which are suspicious
+
+```{r}
+plot_kin_cells_filt <- plot_kin_cells_filt[!(plot_kin_cells_filt$sp == "13G_KIN" & plot_kin_cells_filt$exp_series_date == "6092025"),]
+plot_kin_cells_filt <- plot_kin_cells_filt[!(plot_kin_cells_filt$sp == "D44_KIN" & plot_kin_cells_filt$exp_series_date == "7052025"),]
+plot_kin_cells_filt <- plot_kin_cells_filt[!(plot_kin_cells_filt$exp_series_date == "21122024"),]
+
+
+
+```
+
+
+
+# DISTRIBUTIONS OF PREDICTED VALUES, on the manually filtered dataset
+
+
+```{r,  echo=TRUE, message=FALSE, warning=FALSE}
+
+
+df <- plot_kin_cells_filt[plot_kin_cells_filt$bp_exp > 2^23,]
+df <- df[df$estimate == "KIN_nuclDNA",]
+df <- df[df$suns_for_clust == global_subs,]
+
+ggplot(df, aes( bp_exp ) )+geom_histogram(aes(fill = ploidy_clust), bins = 30, alpha = 0.4, position = "identity")+theme_bw()+
+    scale_x_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2))+facet_wrap(~est_sp)+ggtitle(paste(global_subs,"nuclear DNA"))
+
+
+df <- plot_kin_cells_filt[plot_kin_cells_filt$bp_exp_ploidy_corr > 2^23,]
+df <- df[df$estimate == "kDNA_df",]
+df <- df[df$suns_for_clust == global_subs,]
+
+ggplot(df, aes( bp_exp ) )+geom_histogram(aes(fill = ploidy_clust), bins = 30, alpha = 0.4, position = "identity")+theme_bw()+
+    scale_x_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2), breaks = 2^(23:40))+facet_wrap(~est_sp)+ggtitle(paste(global_subs,"kDNA") )
+
+
+
+ df <- plot_kin_cells_filt[plot_kin_cells_filt$est_sp == "Gemkin_KINnuclearDNA_kineto",]
+ ggplot(df, aes( bp_exp_ploidy_corr ) )+geom_histogram(aes(fill = ploidy_clust), bins = 30, alpha = 0.4, position = "identity")+theme_bw()+
+    scale_x_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2), breaks = 2^(23:40))+facet_wrap(~suns_for_clust)+ggtitle("Gemkin")
+
+ 
+ plot_kin_cells_filt[grep("INU", plot_kin_cells_filt$sp),]
+```
+
+
+```{r}
+
+ggplot(plot_kin_cells_filt[plot_kin_cells_filt$est_par == "nuclearDNA_kineto" & plot_kin_cells_filt$ploidy_clust == "1n" & plot_kin_cells_filt$suns_for_clust == global_subs, ], aes(interaction(ploidy_clust, .data[["exp_series_date"]], sp), bp_exp))+
+  geom_point(aes( colour=sp, shape = ploidy_clust ), size =2, alpha = 0.5, position=position_jitter(height=0, width=0.2))+
+  geom_violin(alpha = 0)+
+  geom_boxplot( alpha = 0)+
+  theme_bw()+ ggtitle("Predicted nuclear DNA of kinetoplastids")+
+  #facet_wrap(~slidedate)+
+   scale_y_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2), breaks = 2^(19:40))+theme(axis.text.x = element_blank())
+# theme(axis.text.x = element_text(angle = 90))
+
+ggplot(plot_kin_cells_filt[plot_kin_cells_filt$est_par == "kDNA" & plot_kin_cells_filt$ploidy_clust == "1n" & plot_kin_cells_filt$suns_for_clust == global_subs, ], aes(interaction(ploidy_clust, .data[["exp_series_date"]], sp), bp_exp))+
+  geom_point(aes( colour=sp, shape = ploidy_clust ), size =2, alpha = 0.5, position=position_jitter(height=0, width=0.2))+
+  geom_violin(alpha = 0)+
+  geom_boxplot( alpha = 0)+
+  theme_bw()+ ggtitle("Predicted kDNA of kinetoplastids")+theme(axis.text.x = element_text(angle = 90))+
+  #facet_wrap(~slidedate)+
+   scale_y_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2), breaks = 2^(19:40))+theme(axis.text.x = element_blank())
+# theme(axis.text.x = element_text(angle = 90))
+
+
+#plot_kin_cells_filt
+
+ggplot(plot_kin_cells_filt[plot_kin_cells_filt$est_par == "nuclearDNA_kineto" & plot_kin_cells_filt$ploidy_clust == "1n" & plot_kin_cells_filt$suns_for_clust == global_subs, ], aes(interaction(ploidy_clust, .data[[short_subs]], sp), bp_exp))+
+  geom_point(aes( colour=sp, shape = ploidy_clust ), size =2, alpha = 0.5, position=position_jitter(height=0, width=0.2))+
+  geom_violin(alpha = 0)+
+  geom_boxplot( alpha = 0)+
+  theme_bw()+ ggtitle("Predicted nuclear DNA of kinetoplastids")+theme(axis.text.x = element_text(angle = 90))+
+  #facet_wrap(~slidedate)+
+   scale_y_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2), breaks = 2^(19:40))
+
+ggplot(plot_kin_cells_filt[plot_kin_cells_filt$est_par == "kDNA" & plot_kin_cells_filt$ploidy_clust == "1n" & plot_kin_cells_filt$suns_for_clust == global_subs, ], aes(interaction(ploidy_clust, .data[[short_subs]], sp), bp_exp))+
+  geom_point(aes( colour=sp, shape = ploidy_clust ), size =2, alpha = 0.5, position=position_jitter(height=0, width=0.2))+
+  geom_violin(alpha = 0)+
+  geom_boxplot( alpha = 0)+
+  theme_bw()+ ggtitle("Predicted kDNA of kinetoplastids")+theme(axis.text.x = element_text(angle = 90))+
+  #facet_wrap(~slidedate)+
+   scale_y_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2), breaks = 2^(19:40))
+
+
+
+
+
+```
+
+
+### statistical tests for differences between series, within ploidy cluster 1n and selected setting
+
+```{r}
+
+plot_kin_cells_filt_1n <- data.frame(plot_kin_cells_filt[plot_kin_cells_filt$ploidy_clust == "1n",])
+#plot_kin_cells_filt_1n <- data.frame(plot_kin_cells_filt)
+
+for (sp in unique(plot_kin_cells_filt_1n$est_sp)) {
+ # print(sp)
+  data <- plot_kin_cells_filt_1n[plot_kin_cells_filt_1n$suns_for_clust == global_subs,]
+  data <- data[data$est_sp == sp,]
+  
+ # print(unique(data$est_sp))
+ # print( kruskal.test(as.numeric(bp_exp)~ as.factor(exp_series_date), data ) )
+  
+  if (length(unique(data$exp_series_date)) >2 ) {
+    #  print( dunnTest(as.numeric(bp_exp)~ as.factor(exp_series_date), data) ) 
+    }
+
+}
+
+
+```
+
+
+### statistical tests for normal distribution
+
+```{r}
+
+plot_kin_cells_filt_1n <- data.frame(plot_kin_cells_filt[plot_kin_cells_filt$ploidy_clust == "1n",])
+#plot_kin_cells_filt_1n <- data.frame(plot_kin_cells_filt)
+
+for (sp in unique(plot_kin_cells_filt_1n$est_sp)) {
+  print(sp)
+  data <- plot_kin_cells_filt_1n[plot_kin_cells_filt_1n$suns_for_clust == global_subs,]
+  data <- data[data$est_sp == sp,]
+  
+ print(shapiro.test(data$bp_exp)$p.value)
+  print(shapiro.test(data$nucl_sum_int)$p.value)
+
+}
+
+
+```
+
+
+
+### now, is done within corresponding clusters, for this
+
+
+# MAKE SURE HOW subset_for_median_estimation IS SET!!!
+
+```{r}
+
+median_summary_regressed <- predictedbp_median_estimator(data.frame(plot_kin_cells_filt), subset_for_median_estimation = "ploidy"  )
+
+#plot_kin_cells_filt[plot_kin_cells_filt$file_prefix == "D44_Cflexa_07052025_DAPI600ngml_thickstack" & plot_kin_cells_filt$exp_series_date == "7052025",]
+#median_summary_regressed[median_summary_regressed$sp == "D44_KINkDNA",]
+
+#intermediate backup
+fwrite(median_summary_regressed, "median_summary_regressed.csv")
+
+
+## for testing/debug
+
+#group_df <- data.frame(plot_kin_cells_filt)
+#   tmp <- group_df[group_df$suns_for_clust == "est_sp  ALL" , ]
+#   tmp <- tmp[tmp$est_sp == "Rhyncho_KINnuclearDNA_kineto",]
+#tmp <- tmp[tmp$ploidy_clust == "1n",]
+#  groupwiseMedian(bp_exp_ploidy_corr~1, tmp)
+#  median(tmp$bp_exp_ploidy_corr)
+
+```
+
+
+# AFTER MEDIAN OR MEAN INFERENCE
+
+```{r}
+
+median_summary_regressed <- fread("median_summary_regressed.csv")
+
+sum <- median_summary_regressed
+
+```
+
+
+### Count Numbers of cells measured
+
+```{r}
+
+#ggplot(sum[sum$method == global_subs,], aes(cell_count, as.factor(exp_series_date) ) )+geom_point(aes(shape=if_test_sp, colour = sp), size =3, alpha =0.5)+theme_bw()+theme(legend.position = "bottom")
+
+```
+
+
+
+
+
+## By inspecting plots generating above, and by comparing results of control regressions (neat_knit parser), find the best setting. 
+## ! ATTENTION! Operating under the best setting from now - for the sake of clarity. 
+## ! ATTENTION! Operating with 1n (=cells in G1 phase) cluster. Because we have to assume worst-case.
+## Operating under assumption of 2x chromosome copy number in kinetos ("diploid")
+## RNAspades transcriptome assemblies are haploid.
+
+## subsetting to a single setting - and processing the estimates from different clusters depending on the chosen setting 
+
+```{r}
+subset_id <- global_subs # "est_sp slidedate slide" # "est_sp  series" 
+sum_subs <- sum[sum$method == subset_id,]
+
+# sum_subs[(sum_subs$sp == "D44_KINnuclearDNA_kineto"),]
+
+sum_subs <- sum_subs[sum_subs$ploidy_clust == "1n",]
+
+#!!! temporary fix for an artefact of a slide with very big outliers
+#sum_subs <- sum_subs[!(sum_subs$file_prefix == "D44_Cflexa_07052025_DAPI600ngml_thickstack"),]
+#sum_subs <- sum_subs[!(sum_subs$file_prefix == "D44_Sros_07052025_DAPI600ngml_thickstack"),]
+
+
+```
+
+### merge with transcriptome info
+
+```{r}
+
+coding_parts <- fread("redundancy_reduction_busco_diff_methods_KIN.csv")
+
+sum_subs$est_par <- str_replace(sum_subs$sp, ".*_KIN", "")
+sum_subs$test_species <- gsub("_KINnuclearDNA_kineto|_KINkDNA", "", sum_subs$sp)
+
+
+busco_exp <- sum_subs %>% full_join(coding_parts, by='test_species') 
+
+```
+
+### busco graphs
+
+```{r}
+
+ggplot(busco_exp, aes(MEDIAN_bp_exp, MEDIAN_int))+
+    geom_point(aes(colour=est_par, shape = method.x ),size =3, alpha = 0.75)+
+#geom_line(aes(group=est_sp))+
+  theme_bw()+
+    scale_x_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2), breaks = 2^(19:40))+
+   scale_y_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2), breaks = 2^(19:40))+
+    scale_shape_manual(values = 0:24)+
+  geom_point(aes(x =as.numeric(Mbp_observed)*1000000 , colour = method.y ))+
+  facet_wrap(~test_species)+
+  ggtitle(paste("non-BUSCO corrected", subset_id))
+  
+  #+theme(legend.position = "bottom")
+
+ggplot(busco_exp, aes(MEDIAN_bp_exp, MEDIAN_int))+
+    geom_point(aes(colour=est_par, shape = method.x ),size =3, alpha = 0.75)+
+#geom_line(aes(group=est_sp))+
+  theme_bw()+
+    scale_x_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2), breaks = 2^(19:40))+
+   scale_y_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2), breaks = 2^(19:40))+
+    scale_shape_manual(values = 0:24)+
+  geom_point(aes(x =as.numeric(Mbp_BUSCO_EUGL_normalised)*1000000 , colour = method.y ))+
+  facet_wrap(~test_species)+
+   ggtitle(paste("BUSCO corrected", subset_id))
+  
+
+
+ggplot(busco_exp, aes(MEDIAN_bp_exp, MEDIAN_int))+
+    geom_point(aes(colour=est_par, shape = method.x ),size =3, alpha = 0.75)+
+#geom_line(aes(group=est_sp))+
+  theme_bw()+
+    scale_x_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2), breaks = 2^(19:40))+
+   scale_y_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2), breaks = 2^(19:40))+
+    scale_shape_manual(values = 0:24)+
+  geom_point(aes(x =as.numeric(Mbp_observed)*2*1000000 , colour = method.y ))+
+  facet_wrap(~test_species)+
+  ggtitle(paste("non-BUSCO corrected, haploid CDS*2", subset_id))
+  
+  #+theme(legend.position = "bottom")
+
+ggplot(busco_exp, aes(MEDIAN_bp_exp, MEDIAN_int))+
+    geom_point(aes(colour=est_par, shape = method.x ),size =3, alpha = 0.75)+
+#geom_line(aes(group=est_sp))+
+  theme_bw()+
+    scale_x_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2), breaks = 2^(19:40))+
+   scale_y_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2), breaks = 2^(19:40))+
+    scale_shape_manual(values = 0:24)+
+  geom_point(aes(x =as.numeric(Mbp_BUSCO_EUGL_normalised)*2*1000000 , colour = method.y ))+
+  facet_wrap(~test_species)+
+   ggtitle(paste("BUSCO corrected, haploid CDS*2", subset_id))
+
+```
+
+
+
+### beatiful and simplified variation of the same plot - for presentations
+
+```{r}
+
+busco_exp_niceplot <- busco_exp[busco_exp$method.y == "CD_hit_90", ]
+
+#[busco_exp_niceplot$est_par == "kDNA",]
+
+
+ggplot(busco_exp_niceplot, aes(x=test_species,y = MEDIAN_bp_exp))+
+  geom_pointrange(aes(ymin=as.numeric(mean_lower),ymax=as.numeric(mean_higher), colour = est_par, shape = as.factor(ploidy)), linewidth=1, alpha=0.7, position=position_jitter(height=0, width=0.1), size = 1)+
+#geom_line(aes(group=est_sp))+
+  theme_bw()+
+   scale_y_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2), breaks = 2^(19:40))+
+    scale_shape_manual(values = 0:24)+scale_colour_manual(values = rev(scales::hue_pal()(length(unique(busco_exp_niceplot$est_par)))))+
+#  geom_point(aes(y =as.numeric(Mbp_observed)*2*1000000), colour = "red", size = 3, alpha = 0.5)+
+  #geom_point(aes(y =as.numeric(Mbp_observed)*1000000), colour = "blue", size = 3, alpha = 0.5)+
+  #facet_wrap(~est_par)+
+  ggtitle(paste("non-BUSCO corrected, CD-hit AA 90% predicted CDS length X2", subset_id))
+
+
+gg <- ggplot(busco_exp_niceplot, aes(x=test_species,y = MEDIAN_bp_exp))+
+  geom_pointrange(aes(ymin=as.numeric(mean_lower),ymax=as.numeric(mean_higher), colour = est_par, shape = est_par), linewidth=1, position=position_jitter(height=0, width=0.25))+
+#geom_line(aes(group=est_sp))+
+  theme_bw()+theme(axis.text.x = element_blank())+
+   scale_y_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2))+
+    scale_shape_manual(values = 0:24)+scale_colour_manual(values = rev(scales::hue_pal()(length(unique(busco_exp_niceplot$est_par)))))+
+  geom_hline(aes(yintercept=Mbp_observed*2*1000000 ), colour = "red", alpha = 0.5)+
+  #geom_point(aes(y =as.numeric(Mbp_observed)*1000000), colour = "blue", size = 3, alpha = 0.5)+
+  facet_wrap(~test_species, scales="free_x", ncol = length(unique(busco_exp_niceplot$test_species)))+
+  ggtitle(paste("non-BUSCO corrected, CD-hit AA 90% predicted CDS length X2", subset_id))
+
+#print(gg)
+
+ggsave("busco_exp_niceplot.jpg", width = 20, height = 10, units = "cm")
+
+```
+
+
+bp to Mbp
+
+```{r}
+
+busco_exp_niceplot$MEDIAN_bp_exp <- busco_exp_niceplot$MEDIAN_bp_exp /1000000
+busco_exp_niceplot$quant_higher <- busco_exp_niceplot$quant_higher  /1000000
+busco_exp_niceplot$quant_lower <- busco_exp_niceplot$quant_lower  /1000000
+busco_exp_niceplot$mean_higher <- busco_exp_niceplot$mean_higher  /1000000
+busco_exp_niceplot$mean_lower <- busco_exp_niceplot$mean_lower  /1000000
+
+```
+
+
+# PLOT FOR THE PREPRINT
+
+```{r}
+
+fwrite(busco_exp_niceplot, "busco_exp_niceplot.csv")
+
+others <-fread("others_data.csv", header=TRUE)
+
+busco_exp_niceplot_w_tryps <- rbind(others, busco_exp_niceplot)
+
+busco_exp_niceplot_w_tryps <- busco_exp_niceplot_w_tryps[busco_exp_niceplot_w_tryps$sp != "Perkinsela_KINkDNA",]
+
+
+busco_exp_niceplot_w_tryps$test_species <- factor(busco_exp_niceplot_w_tryps$test_species, levels = c("Perkinsela", "Rhyncho", "BABKIN", "INUKIN",
+ "D44", "Gre65",  "10D", "13G", "Allob", "Gemkin", "OB23", "Trbor", "Trbru"))
+
+
+my_cols <- brewer.pal(12, "Set3")[c(1, 4, 5, 7, 10)]
+
+ ggplot(busco_exp_niceplot_w_tryps, aes(x=test_species,y = MEDIAN_bp_exp, label=cell_count))+
+  geom_pointrange(aes(ymin=as.numeric(mean_lower),ymax=as.numeric(mean_higher), colour = est_par, shape = if_test_sp), linewidth=1, position=position_jitter(height=0, width=0.25))+
+#geom_line(aes(group=est_sp))+
+  theme_bw()+theme(axis.text.x = element_blank())+
+   #scale_y_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2))+
+    scale_shape_manual(values = 0:24)+
+   scale_colour_manual(values = rev(scales::hue_pal()(length(unique(busco_exp_niceplot_w_tryps$est_par)))))+
+  geom_hline(aes(yintercept=Mbp_observed*2), colour = "red", alpha = 0.5)+
+   geom_text(size =1.5)+
+
+  facet_wrap(~test_species, scales="free_x", ncol = length(unique(busco_exp_niceplot_w_tryps$test_species)))+
+ scale_colour_manual(values = my_cols)
+
+ 
+ ggsave("pred_facet.jpg", width = 20, height = 7, units = "cm")
+ 
+ 
+ 
+```
+
+
+
+
+
+```{r}
+
+busco_exp_niceplot$median_tocoding_dipl <- as.numeric(busco_exp_niceplot$Mbp_observed)*2 / busco_exp_niceplot$MEDIAN_bp_exp
+busco_exp_niceplot$median_toNONcoding_dipl <- ( busco_exp_niceplot$MEDIAN_bp_exp - as.numeric(busco_exp_niceplot$Mbp_observed)*2 ) / busco_exp_niceplot$MEDIAN_bp_exp 
+
+busco_exp_niceplot$merger <- paste(busco_exp_niceplot$exp_series_date, busco_exp_niceplot$test_species)
+
+r <- data.frame(reshape(busco_exp_niceplot, timevar = "est_par", idvar = "merger",  direction = "wide") )
+
+dups <- duplicated(as.list(r))  # Find duplicate columns by content
+busco_exp_niceplot_m <- r[!dups] 
+
+
+old_names <- names(busco_exp_niceplot_m)
+new_names <- sub("\\..*", "", old_names)
+will_be_duplicated <- duplicated(new_names) | duplicated(new_names, fromLast = TRUE)
+final_names <- ifelse(will_be_duplicated, old_names, new_names)
+names(busco_exp_niceplot_m) <- final_names
+
+busco_exp_niceplot_m[is.na(busco_exp_niceplot_m$exp_series_date.nuclearDNA_kineto),]
+
+colnames(busco_exp_niceplot_m)
+
+
+
+
+ggplot(busco_exp_niceplot_m, aes(x=MEDIAN_bp_exp.nuclearDNA_kineto,y = MEDIAN_bp_exp.kDNA))+
+  geom_point(aes(colour=test_species, shape = test_species), size =3, alpha = 0.75)+
+  scale_shape_manual(values = c(15,17,18,19,8,9,0,1,2,5,4,6))+
+ labs(y = "kDNA, Mbp", x = "nuclear DNA, Mbp")+
+    theme_bw()
+
+
+ggplot(busco_exp_niceplot_m, aes(x=MEDIAN_bp_exp.nuclearDNA_kineto+MEDIAN_bp_exp.kDNA,y = test_species))+
+  geom_point(aes(colour=test_species, shape = test_species), size =3, alpha = 0.75)+
+  scale_shape_manual(values = c(15,17,18,19,8,9,0,1,2,5,4,6))+
+ labs(x = "kDNA, Mbp+nuclear DNA, Mbp")+
+    theme_bw()
+
+
+ggplot(busco_exp_niceplot_m, aes(x=MEDIAN_bp_exp.kDNA/MEDIAN_bp_exp.nuclearDNA_kineto,y = test_species))+
+  geom_point(aes(colour=test_species, shape = test_species), size =3, alpha = 0.75)+
+  scale_shape_manual(values = c(15,17,18,19,8,9,0,1,2,5,4,6))+
+ labs(x = "kDNA/nuclear DNA")+
+    theme_bw()
+
+ggplot(busco_exp_niceplot_m, aes(x=MEDIAN_bp_exp.kDNA/MEDIAN_bp_exp.nuclearDNA_kineto,y = Mbp_observed*2/MEDIAN_bp_exp.nuclearDNA_kineto))+
+  geom_point(aes(colour=test_species, shape = test_species), size =3, alpha = 0.75)+
+  scale_shape_manual(values = c(15,17,18,19,8,9,0,1,2,5,4,6))+
+    theme_bw()
+
+ggplot(busco_exp_niceplot_m, aes(x= median_toNONcoding_dipl.nuclearDNA_kineto,y=MEDIAN_bp_exp.kDNA))+
+  geom_point(aes(colour=test_species, shape = test_species), size =3, alpha = 0.75)+
+    theme_bw()
+    
+busco_exp_niceplot_m$kDNA_to_nucl <- busco_exp_niceplot_m$MEDIAN_bp_exp.kDNA/busco_exp_niceplot_m$MEDIAN_bp_exp.nuclearDNA_kineto
+  
+ggplot(busco_exp_niceplot_m, aes(x= median_toNONcoding_dipl.nuclearDNA_kineto,y=kDNA_to_nucl))+
+  geom_point(aes(colour=test_species, shape = test_species), size =4, alpha = 0.75)+
+    scale_shape_manual(values = c(15,17,18,19,8,9,0,1,2,5,4,6))+
+ labs(y = "kDNA size/ nuclear DNA", x = "non-coding nuclear DNA(diploid assumption)/nuclear DNA")+
+    theme_bw()
+  
+
+
+ggplot(busco_exp_niceplot_m, aes(x= (MEDIAN_bp_exp.kDNA+Mbp_observed*2)/(MEDIAN_bp_exp.nuclearDNA_kineto+MEDIAN_bp_exp.kDNA),
+                                 y=(MEDIAN_bp_exp.nuclearDNA_kineto-Mbp_observed*2)/(MEDIAN_bp_exp.nuclearDNA_kineto+MEDIAN_bp_exp.kDNA) 
+                                 ))+
+  geom_point(aes(colour=test_species, shape = test_species), size =4, alpha = 0.75)+
+    scale_shape_manual(values = c(15,17,18,19,8,9,0,1,2,5,4,6))+
+ labs(y = "Species", x = "coding nuclear DNA(diploid assumption)/nuclear DNA+kDNA")+
+    theme_bw()
+  
+
+ggplot(busco_exp_niceplot_m, aes(x= (MEDIAN_bp_exp.kDNA)/(MEDIAN_bp_exp.nuclearDNA_kineto+MEDIAN_bp_exp.kDNA),
+                                 y=(MEDIAN_bp_exp.nuclearDNA_kineto-Mbp_observed*2)/(MEDIAN_bp_exp.nuclearDNA_kineto+MEDIAN_bp_exp.kDNA) 
+                                 ))+
+  geom_point(aes(colour=test_species, shape = test_species), size =4, alpha = 0.75)+
+    scale_shape_manual(values = c(15,17,18,19,8,9,0,1,2,5,4,6))+
+ labs(y = "Species", x = "coding nuclear DNA(diploid assumption)/nuclear DNA+kDNA")+
+    theme_bw()
+  
+
+
+
+
+
+ggplot(busco_exp_niceplot_m, aes(x= (MEDIAN_bp_exp.kDNA), y=(MEDIAN_bp_exp.nuclearDNA_kineto+MEDIAN_bp_exp.kDNA) ))+
+  geom_point(aes(colour=test_species, shape = test_species), size =4, alpha = 0.75)+
+    scale_shape_manual(values = c(15,17,18,19,8,9,0,1,2,5,4,6))+
+ labs(y = "Species", x = "coding nuclear DNA(diploid assumption)/nuclear DNA+kDNA")+
+    theme_bw()
+  
+
+
+ggplot(busco_exp_niceplot_m, aes(x=(MEDIAN_bp_exp.nuclearDNA_kineto-Mbp_observed*2)/(MEDIAN_bp_exp.kDNA+MEDIAN_bp_exp.nuclearDNA_kineto),y = MEDIAN_bp_exp.kDNA/(MEDIAN_bp_exp.kDNA+MEDIAN_bp_exp.nuclearDNA_kineto)))+
+  geom_point(aes(colour=test_species, shape = test_species), size =3, alpha = 0.75)+
+  scale_shape_manual(values = c(15,17,18,19,8,9,0,1,2,5,4,6))+
+    theme_bw()+scale_colour_brewer(palette = "Set3")
+
+```
+
+# LINEAR regression of kDNA vs non-coding nuclear DNA portion
+
+
+```{r}
+
+busco_exp_niceplot_m$A <- (busco_exp_niceplot_m$MEDIAN_bp_exp.nuclearDNA_kineto-busco_exp_niceplot_m$Mbp_observed*2)/(busco_exp_niceplot_m$MEDIAN_bp_exp.kDNA+busco_exp_niceplot_m$MEDIAN_bp_exp.nuclearDNA_kineto)
+
+busco_exp_niceplot_m$B <- (busco_exp_niceplot_m$MEDIAN_bp_exp.kDNA/(busco_exp_niceplot_m$MEDIAN_bp_exp.kDNA+busco_exp_niceplot_m$MEDIAN_bp_exp.nuclearDNA_kineto))
+
+
+model.k = mblm( B~A,
+               data=busco_exp_niceplot_m)
+efronRSquared(model.k)
+
+plot(B~A,
+     data = busco_exp_niceplot_m,
+     pch  = 16)
+
+abline(model.k,
+       col="blue",
+       lwd=2)
+
+```
+
+
+
+# MEANS of medians
+
+
+```{r}
+
+
+#sum_subs$est_par <- str_replace(sum_subs$sp, ".*_KIN", "")
+#sum_subs$test_species <- gsub("_KINnuclearDNA_kineto|_KINkDNA", "", sum_subs$sp)
+
+data_means <- data.frame()
+for (i in unique(sum_subs$sp)) {
+  tmp <- data.frame(test_species =  unique(sum_subs$test_species[sum_subs$sp==i]),
+                    est_par = unique(sum_subs$est_par[sum_subs$sp==i]),
+                    mean = mean(sum_subs$MEDIAN_bp_exp[sum_subs$sp==i]),
+                    se = se(sum_subs$MEDIAN_bp_exp[sum_subs$sp==i]) )
+  data_means <- rbind(data_means, tmp)
+}
+
+
+
+coding_parts <- fread("redundancy_reduction_busco_diff_methods_KIN.csv")
+busco_exp_means <- data_means %>% full_join(coding_parts, by='test_species') 
+
+
+busco_exp_means$mean <- busco_exp_means$mean /1000000
+busco_exp_means$se <- busco_exp_means$se  /1000000
+
+busco_exp_means$mean_tocoding_dipl <- as.numeric(busco_exp_means$Mbp_observed)*2 / busco_exp_means$mean
+busco_exp_means$mean_toNONcoding_dipl <- ( busco_exp_means$mean - as.numeric(busco_exp_means$Mbp_observed)*2 ) / busco_exp_means$mean
+
+
+r <- data.frame(reshape(busco_exp_means, timevar = "est_par", idvar = "test_species",  direction = "wide") )
+dups <- duplicated(as.list(r))  # Find duplicate columns by content
+busco_exp_means_m <- r[!dups] 
+
+
+old_names <- names(busco_exp_means_m)
+new_names <- sub("\\..*", "", old_names)
+will_be_duplicated <- duplicated(new_names) | duplicated(new_names, fromLast = TRUE)
+final_names <- ifelse(will_be_duplicated, old_names, new_names)
+names(busco_exp_means_m) <- final_names
+
+
+colnames(busco_exp_means_m)
+
+```
+
+
+
+
+```{r}
+ggplot(busco_exp_means_m, aes(x=mean.nuclearDNA_kineto,y = mean.kDNA))+
+  geom_point(aes(colour=test_species, shape = test_species), size =4)+
+  scale_shape_manual(values = c(15,17,18,19,8,9,0,1,2,5,4,6))+
+ labs(y = "kDNA, Mbp", x = "nuclear DNA, Mbp")+
+    theme_bw()
+
+ggplot(busco_exp_means_m, aes(x= mean_toNONcoding_dipl.nuclearDNA_kineto,y=mean.kDNA))+
+  geom_point(aes(colour=test_species, shape = test_species), size =4)+
+    theme_bw()
+    
+busco_exp_means_m$kDNA_to_nucl <- busco_exp_means_m$mean.kDNA/busco_exp_means_m$mean.nuclearDNA_kineto
+busco_exp_means_m$all_DNA <- busco_exp_means_m$mean.kDNA+busco_exp_means_m$mean.nuclearDNA_kineto  
+
+ggplot(busco_exp_means_m, aes(x= (mean.nuclearDNA_kineto - Mbp_observed )/all_DNA,y=busco_exp_means_m$mean.kDNA/all_DNA))+
+  geom_point(aes(colour=test_species, shape = test_species), size =4)+
+  scale_shape_manual(values = c(15,17,18,19,8,9,0,1,2,5,4,6))+
+ labs(y = "kDNA size/ ALL DNA", x = "non-coding nuclear DNA(diploid assumption)/ALL DNA")+
+    theme_bw()
+
+
+```
+
+
+
+
+```{r}
+ggplot(busco_exp_means_m, aes(x= mean.nuclearDNA_kineto/protein_count,y=busco_exp_means_m$mean.kDNA))+
+  geom_point(aes(colour=test_species, shape = test_species), size =4)+
+  scale_shape_manual(values = c(15,17,18,19,8,9,0,1,2,5,4,6))+
+ labs(y = "kDNA Mbp", x = "Mbp nuclear genome per 1 protein")+
+    theme_bw()
+
+```
+
+
+
+
+```{r}
+
+ggplot(busco_exp_means_m, aes(y= mean.kDNA/2, x = factor(test_species, levels = c( "Allob","Gemkin", "10D", "13G", "Rhyncho","D44", "Gre65", "BABKIN", "INUKIN")) ))+geom_col(fill ="cadetblue" )+theme_bw()+scale_y_continuous(breaks = c(0,10,20,30,40,50,60,70,80,90,100))
+
+ggplot(busco_exp_means_m, aes(y= mean.nuclearDNA_kineto/2, x = factor(test_species, levels = c( "Allob","Gemkin", "10D", "13G", "Rhyncho","D44", "Gre65", "BABKIN", "INUKIN")) ))+geom_col(fill ="coral2" )+theme_bw()+scale_y_continuous(breaks = c(0,10,20,30,40,50,60,70,80,90,100))
+
+ggplot(busco_exp_means_m, aes(y= protein_count,  x = factor(test_species, levels = c( "Allob","Gemkin", "10D", "13G", "Rhyncho","D44", "Gre65", "BABKIN", "INUKIN")) ))+geom_col(fill ="darkgoldenrod")+theme_bw()+scale_y_continuous(breaks = c(0, 15000))
+
+ggplot(busco_exp_means_m, aes(y= protein_count/Mbp_observed,  x = factor(test_species, levels = c( "Allob","Gemkin", "10D", "13G", "Rhyncho","D44", "Gre65", "BABKIN", "INUKIN")) ))+geom_col(fill ="darkgoldenrod")+theme_bw()+scale_y_continuous(breaks = c(0, 15000))
+
+
+
+ggplot(busco_exp_means_m, aes(y= (mean.nuclearDNA_kineto - Mbp_observed*2 )/(mean.nuclearDNA_kineto+mean.kDNA),  x = factor(test_species, levels = c( "Allob","Gemkin", "10D", "13G", "Rhyncho","D44", "Gre65", "BABKIN", "INUKIN")) ))+geom_col(fill ="darkolivegreen")+theme_bw()
+
+
+ggplot(busco_exp_means_m, aes(y= (mean.kDNA+(mean.nuclearDNA_kineto - Mbp_observed*2 ))/(mean.nuclearDNA_kineto+mean.kDNA),  x = factor(test_species, levels = c( "Allob","Gemkin", "10D", "13G", "Rhyncho","D44", "Gre65", "BABKIN", "INUKIN")) ))+geom_col(fill ="coral2")+theme_bw()
+
+
+ggplot(busco_exp_means_m, aes(y= mean.nuclearDNA_kineto+mean.kDNA,  x = factor(test_species, levels = c( "Allob","Gemkin", "10D", "13G", "Rhyncho","D44", "Gre65")) ))+geom_col(fill ="coral2")+theme_bw()
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
