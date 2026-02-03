@@ -1,0 +1,631 @@
+---
+title: "Untitled"
+author: "Zavadska Daryna"
+date: "2025-11-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+```{r, echo=FALSE , message=FALSE}
+##upload packages
+library(stringr)
+library(openxlsx)
+library(data.table)
+library(magrittr)
+#library(GGally)
+#library(propr)
+library(data.table)
+library(ggplot2)
+library(reshape2)
+library(tidyverse)
+library(dplyr)
+library(plyr)
+library(microshades)
+library(scales)
+library(ggbreak) 
+library(patchwork)
+library(ggpubr)
+library(gplots)
+library(PerformanceAnalytics)
+
+library(patchwork)
+library(microshades)
+library(ggtext)
+library(gridExtra)
+library(ggpmisc)
+
+```
+
+```{r}
+colors <-c(microshades_palette("micro_blue", lightest = FALSE), 
+           microshades_palette("micro_purple", lightest = FALSE), microshades_palette("micro_cvd_purple", lightest = FALSE), 
+           microshades_palette("micro_green", lightest = FALSE), 
+           microshades_palette("micro_cvd_green", lightest = FALSE),
+           microshades_palette("micro_orange", lightest = FALSE), 
+           microshades_palette("micro_brown", lightest = FALSE), 
+           microshades_palette("micro_cvd_turquoise", lightest = FALSE),
+           microshades_palette("micro_cvd_gray", lightest = FALSE))
+
+```
+
+
+
+
+
+```{r}
+#source tables here https://docs.google.com/spreadsheets/d/1t1BwSQRRvVuYbAhggKFb4Judfg_OvTrHUxUnBVghA5M/edit?gid=1209785171#gid=1209785171
+list <- list.files(path = "./", pattern = "BUSCO_out.tsv")
+
+```
+
+
+
+```{r}
+
+busco_db_sp <- fread("BUSCO_databases.tsv")
+
+
+
+
+big_df <- data.frame()
+
+for (i in list) {
+  
+  name <- str_replace(i, "_BUSCO_out.tsv","")
+  
+  BUSCO_eugl <- fread(i)
+#check taxonomic affiliation, cause there was a typo in table 
+  BUSCO_eugl$group[BUSCO_eugl$species == "Apiculatamorpha_spiralis"] <- "Prokinetoplastids"
+  
+  
+BUSCO_eugl_m <- melt(BUSCO_eugl)
+
+if (grepl("NUCL", i)==FALSE) { BUSCO_eugl_m <- BUSCO_eugl_m[-grep("Willaertia.*NON", BUSCO_eugl_m$file),] }
+
+#subsetting euglenozoan BUSCO to only euglenozoa
+if (grepl("EUGL", name)) {
+  BUSCO_eugl_m <- BUSCO_eugl_m[BUSCO_eugl_m$group != "Other",]
+  db_list <- busco_db_sp$species[busco_db_sp$busco_db=="EUGL"]  }else{
+    db_list <- busco_db_sp$species[busco_db_sp$busco_db!="EUGL"]
+  }
+
+
+sp_to_label <- paste0( BUSCO_eugl_m$species[BUSCO_eugl_m$species %in% db_list ] , ".", BUSCO_eugl_m$group[BUSCO_eugl_m$species %in% db_list ] )
+
+BUSCO_eugl_m$assembly <- NA
+BUSCO_eugl_m$assembly[grep("denovo", BUSCO_eugl_m$file)] <- "de novo"
+BUSCO_eugl_m$assembly[grep("REF", BUSCO_eugl_m$file)] <- "reference"
+BUSCO_eugl_m$assembly[grep("NON", BUSCO_eugl_m$file)] <- "reference"
+
+
+
+n <- unique(BUSCO_eugl_m$value[which(BUSCO_eugl_m$variable=="n")])
+
+ggplot(BUSCO_eugl_m[!BUSCO_eugl_m$variable%in% c("C","n"),], aes(value/n, interaction(species,group), fill =  as.factor(variable)) )+
+  geom_bar(stat = "identity", width = 0.8)+
+  scale_y_discrete(labels = ~ if_else( .x %in% sp_to_label, paste0("<span style='color: red'><b>", .x, "</b></span>"),  .x  )) +
+  #geom_text(aes(label = value), hjust=-0.5, size = 2) +
+  theme_bw()+ theme(axis.text.y = element_markdown())+
+  facet_wrap(~assembly,ncol =2) +
+  ggtitle(name)
+
+
+ggsave(paste0(name,".png"), width = 10, height = 10)
+
+  
+BUSCO_eugl_m$setting <- name
+big_df <- rbind(BUSCO_eugl_m, big_df)
+  
+}
+
+
+db_list_eugl <- busco_db_sp$species[busco_db_sp$busco_db=="EUGL"] 
+db_list_euk <- busco_db_sp$species[busco_db_sp$busco_db!="EUGL"]
+
+```
+
+
+## Plots for the preprint
+
+```{r}
+
+big_df_plot <- big_df[!big_df$variable%in% c("C","n"),]
+
+big_df_plot$redundancy <- str_split(big_df_plot$setting, "_", simplify = T)[,1]
+big_df_plot$busco_db <- str_split(big_df_plot$setting, "_", simplify = T)[,2]
+
+big_df_plot <- big_df_plot[big_df_plot$assembly == "reference" & big_df_plot$redundancy == "NR90",]
+
+
+ db_list_euk <- busco_db_sp$species[busco_db_sp$busco_db=="EUK"] 
+ db_list_eugl <- busco_db_sp$species[busco_db_sp$busco_db=="EUGL"] 
+
+ 
+sp_to_label_eugl <- paste0( big_df_plot$species[big_df_plot$species %in% db_list_eugl ] , ".", big_df_plot$group[big_df_plot$species %in% db_list_eugl ] )
+sp_to_label_euk <- paste0( big_df_plot$species[big_df_plot$species %in% db_list_euk ] , ".", big_df_plot$group[big_df_plot$species %in% db_list_euk ] )
+
+
+
+p1 <- ggplot(big_df_plot[big_df_plot$busco_db=="EUGL",], aes(value/130, interaction(species,group), fill =  as.factor(variable)) )+
+  geom_bar(stat = "identity", width = 0.8)+
+  scale_y_discrete(labels = ~ if_else( .x %in% sp_to_label_eugl, paste0("<span style='color: red'><b>", .x, "</b></span>"),  .x  )) +
+  #geom_text(aes(label = value), hjust=-0.5, size = 2) +
+  theme_bw()+ theme(axis.text.y = element_markdown())+xlab("BUSCO completeness")+ylab("species") + labs(fill = "BUSCO category")+
+   theme(legend.position = "bottom")+
+   scale_fill_brewer(palette = "Set3")+
+  ggtitle("Euglenozoa")
+
+
+p2 <- ggplot(big_df_plot[big_df_plot$busco_db=="EUK",], aes(value/255, interaction(species,group), fill =  as.factor(variable)) )+
+  geom_bar(stat = "identity", width = 0.8)+
+  scale_y_discrete(labels = ~ if_else( .x %in% sp_to_label_euk, paste0("<span style='color: red'><b>", .x, "</b></span>"),  .x  )) +
+  #geom_text(aes(label = value), hjust=-0.5, size = 2) +
+  theme_bw()+ theme(axis.text.y = element_markdown() )+xlab("BUSCO completeness")+ylab("species") + labs(fill = "BUSCO category")+
+   theme(legend.position = "bottom")+
+  scale_fill_brewer(palette = "Set3")+
+  ggtitle("Eukaryota")
+
+
+gg <- (p1 + theme(legend.position="none")) | p2  
+
+grid.arrange(p1,p2, nrow = 1)
+
+ggsave("BAD_BUSCO.png", gg, width = 15, height = 10)
+
+
+
+```
+
+
+
+
+```{r}
+
+big_df$redundancy <- str_split(big_df$setting, "_", simplify = T)[,1]
+big_df$busco_db <- str_split(big_df$setting, "_", simplify = T)[,2]
+
+big_df$value_percent <- NA
+big_df$value_percent[big_df$busco_db=="EUGL"] <- big_df$value[big_df$busco_db=="EUGL"]/unique(big_df$value[big_df$busco_db=="EUGL"& big_df$variable=="n"])
+big_df$value_percent[big_df$busco_db=="EUK"] <- big_df$value[big_df$busco_db=="EUK"]/unique(big_df$value[big_df$busco_db=="EUK"& big_df$variable=="n"])
+
+p1 <- ggplot(big_df[big_df$variable=="D",], aes(redundancy, value_percent) )+
+  geom_point(aes(colour=assembly), alpha=0.5)+
+  geom_line(aes(group=interaction(species,assembly), colour=assembly), alpha=0.5)+
+  scale_x_discrete(limits=c("NR90","ORIGINAL","NUCLEOTIDE"))+
+  theme_bw()+ facet_wrap(~busco_db,ncol =2)+
+    theme(axis.text.x = element_text(angle = 45, hjust=1), legend.position = "none")+
+  ggtitle("Duplicated BUSCO")
+
+p2 <- ggplot(big_df[big_df$variable=="C",], aes(redundancy, value_percent) )+
+  geom_point(aes(colour=assembly), alpha=0.5)+
+  geom_line(aes(group=interaction(species,assembly), colour=assembly), alpha=0.5)+
+  scale_x_discrete(limits=c("NR90","ORIGINAL","NUCLEOTIDE"))+
+  theme_bw()+ facet_wrap(~busco_db,ncol =2)+
+    theme(axis.text.x = element_text(angle = 45, hjust=1), legend.position = "bottom")+
+  ggtitle("Complete BUSCO")
+
+
+gg <- (p1 + theme(legend.position="none")) | p2  
+
+grid.arrange(p1,p2, nrow = 1)
+
+ggsave("NR_BUSCO.png", gg)
+
+
+
+```
+
+
+
+## Comparing de novo vs reference assemblies BUSCO results
+
+```{r}
+
+#list of species for which de novo assembly was run
+denov <- big_df[ big_df$species %in% unique(big_df$species[big_df$assembly=="de novo"]), ]
+
+plots <- list()
+
+
+for(i in unique(denov$setting)) {
+  denov_sub <- denov[denov$setting == i, ]
+ # n <- unique(denov_sub$value[denov_sub$variable == "n"])
+
+  p <- ggplot(denov_sub[!denov_sub$variable %in% c("C","n"),],
+              aes(x = value, y = interaction(species, group), fill = as.factor(variable))) +
+        geom_bar(stat = "identity", width = 0.8) +
+        theme_bw() + facet_wrap(~assembly, ncol = 2) +
+        ggtitle(i)
+
+  plots[[i]] <- p
+  
+
+}
+
+combined <- wrap_plots(plots)
+
+ggsave("all_denov_vs_ref_BUSCO.png", combined, width = 20, height = 10)
+
+
+
+
+df_big <- data.frame()
+
+for(i in unique(denov$setting)) {
+  denov_sub <- denov[denov$setting == i, ] 
+  
+  n <- unique(denov_sub$value[denov_sub$variable == "n"]) 
+  
+  denov_sub <- denov_sub[denov_sub$variable=="C",] 
+  
+ df <- denov_sub %>% group_by(species) %>% 
+    summarize(ref_value = value[assembly == "reference"], 
+              denov_value = value[assembly == "de novo"] ) %>%  
+    mutate(diff = (denov_value - ref_value)/n) 
+
+   df$species <- unique(denov_sub$species)
+   df$group <- denov_sub$group[seq(1, length(denov_sub$group), 2)]
+  df$setting <- i
+  
+  df_big <- rbind(df_big, df)
+  
+}
+
+
+
+ggplot(df_big, aes(diff*-1, interaction(species,group) ) )+
+  geom_bar(stat="identity")+
+  #geom_text(aes(label = value), hjust=-0.5, size = 2) +
+  theme_bw()+ facet_wrap(~setting,ncol =2)
+
+fwrite(df_big, "df_big_BUSCO_diff.tsv")
+
+```
+
+
+## Other assembly features (protein length)
+
+```{r}
+
+len_NR <- fread("NR90_assembly_lengths.tsv")
+len_ORIGINAL <- fread("ORIGINAL_assembly_lengths.tsv")
+
+len_NR$redundancy <- "NR90"
+len_ORIGINAL$redundancy <- "ORIGINAL"
+len <- rbind(len_NR, len_ORIGINAL)
+
+len$species <- NA
+for(sp in unique(big_df$species)) {
+  len$species[grep(sp, len$file) ] <- sp }
+
+len$species[grep("Trypanosoma_cruzi_CLBrenerEsmeraldo-like", len$file) ] <- "Trypanosoma_cruzi_CLBrenerEsmeraldo-like" 
+
+
+len$assembly <- NA
+len$assembly[grep("denovo", len$file)] <- "de novo"
+len$assembly[grep("REF", len$file)] <- "reference"
+len$assembly[grep("NON", len$file)] <- "reference"
+
+
+
+denov_len <- denov[!(denov$busco_db == "EUGL"), ]
+denov_len <- merge(denov_len, len, by = c("species", "redundancy", "assembly"))
+
+
+df_big_len <- data.frame()
+
+for(i in unique(denov_len$setting)) {
+  denov_sub <- denov_len[denov_len$setting == i, ] 
+  denov_sub <- denov_sub[denov_sub$variable=="C",] 
+  
+  for(sp in unique(denov_sub$species)) {
+    denov_subsub <- denov_sub[denov_sub$species == sp,]
+    diff <- denov_subsub$sum_len[denov_subsub$assembly == "reference"] - denov_subsub$sum_len[denov_subsub$assembly == "de novo"]
+  print(diff)
+  
+   df <- data.frame(species = sp,
+                    group = denov_subsub$group[1],
+                    assembly = denov_subsub$assembly[1],
+                    redundancy = denov_subsub$redundancy[1],
+                    setting = i,
+                    ref_vs_denov = diff, 
+                    ref = denov_subsub$sum_len[denov_subsub$assembly == "reference"],
+                    denov = denov_subsub$sum_len[denov_subsub$assembly == "de novo"])
+   
+   df_big_len <- rbind(df_big_len, df)
+  }
+}
+
+
+
+ggplot(df_big_len, aes(ref_vs_denov*3/1000000, interaction(species,group) ) )+
+  geom_bar(stat="identity")+
+  #geom_text(aes(label = value), hjust=-0.5, size = 2) +
+  theme_bw()+ facet_wrap(~ interaction(assembly, redundancy),ncol =2)+
+  xlab("Reference - de novo assembled protein-coding part, Mbp")+
+  ylab("")
+
+
+ggplot(df_big_len, aes((ref_vs_denov/ref), interaction(species,group) ) )+
+  geom_bar(stat="identity")+
+  #geom_text(aes(label = value), hjust=-0.5, size = 2) +
+  theme_bw()+ facet_wrap(~ interaction(assembly, redundancy),ncol =2)+
+  xlab("(Reference - de novo assembled protein-coding part)/Reference protein-coding")+
+  ylab("")
+
+
+fwrite(df_big_len, "df_big_len.tsv")
+
+```
+
+
+
+## Plots for the preprint
+
+```{r}
+
+
+denov <- big_df[ big_df$species %in% unique(big_df$species[big_df$assembly=="de novo"]), ]
+denov_sub <- denov[denov$redundancy=="NR90", ]
+ # n <- unique(denov_sub$value[denov_sub$variable == "n"])
+
+d1 <- ggplot(denov_sub[!denov_sub$variable %in% c("C","n"),],
+        aes(x = value, y = interaction(species, group), fill = as.factor(variable))) +
+        geom_bar(stat = "identity", width = 0.8) +
+        theme_bw() + facet_wrap(~interaction(assembly, busco_db), scales = "free_x") +
+   xlab("BUSCO completeness")+ylab("species") + labs(fill = "BUSCO category")+
+      scale_fill_brewer(palette = "Set3")+
+        ggtitle("A")
+
+
+```
+
+
+```{r}
+
+
+df_big_len$redundancy <- str_split(df_big_len$setting, "_", simplify = T)[,1]
+df_big_len$busco_db <- str_split(df_big_len$setting, "_", simplify = T)[,2]
+
+dupl <- df_big_len
+dupl$busco_db <- "EUGL"
+dupl$setting <- paste0(dupl$redundancy, "_EUGL")
+
+rbind(df_big_len, dupl) -> df_big_len_2
+
+df_big_merged <- merge(df_big, df_big_len_2)
+
+df_big_merged$redundancy <- str_split(df_big_merged$setting, "_", simplify = T)[,1]
+df_big_merged$busco_db <- str_split(df_big_merged$setting, "_", simplify = T)[,2]
+
+
+
+d2 <- ggplot(df_big_merged[df_big_merged$redundancy=="NR90",], aes(diff, ref_vs_denov/ref) )+
+  geom_smooth(method = "lm")+
+    stat_poly_eq( formula = y ~ x,  aes(label = paste( ..rr.label.., ..p.value.label.., sep = "~~~")),parse = TRUE, label.x = 0.05, label.y = 0.95 ) +
+  geom_point()+
+  geom_text(aes(label=species), size =2.5, hjust=1.1)+
+  theme_bw()+ facet_wrap(~busco_db,ncol =2)+
+    theme(legend.position = "bottom")+
+  xlab("BUSCO de novo - BUSCO reference ")+ylab("(Length reference - Length de novo)/Length reference") +
+  ggtitle("C")
+
+
+df_big_merged$n <- NA
+df_big_merged$n[df_big_merged$busco_db=="EUGL"] <- 130
+df_big_merged$n[df_big_merged$busco_db=="EUK"] <- 255
+
+d3 <- ggplot(df_big_merged[df_big_merged$redundancy=="NR90",], aes(denov_value/n, ref_vs_denov/ref) )+
+  geom_point()+
+ geom_text(aes(label=species), size =2.5, hjust=1.1)+
+  theme_bw()+ facet_wrap(~busco_db,ncol =2)+
+  geom_smooth(method = "lm")+
+  stat_poly_eq( formula = y ~ x,  aes(label = paste( ..rr.label.., ..p.value.label.., sep = "~~~")),parse = TRUE, label.x = 0.05, label.y = 0.95 ) +
+  xlab("BUSCO de novo ")+ylab("(Length reference - Length de novo)/Length reference") +
+  ggtitle("D")
+
+
+
+
+gg <- grid.arrange(d1,d2,d3,layout_matrix = rbind(c(1, 1), c(2, 3))  )
+
+
+ggsave("denov_BUSCO.png", gg, width = 13, height = 13)
+
+
+```
+
+
+
+
+
+## Lenghts distributions
+
+distributions of protein lengths in de novo vs reference assemblies
+
+```{r}
+
+pre_gen_len_or <- fread("BUSCO_ORIGINAL_length.tsv")
+pre_gen_len_NR <- fread("BUSCO_NR90_length.tsv")
+
+pre_gen_len_or$redundancy <- "ORIGINAL"
+pre_gen_len_NR$redundancy <- "NR90"
+
+
+pre_gen_len <- rbind(pre_gen_len_or, pre_gen_len_NR)
+
+
+pre_gen_len$assembly <- NA
+pre_gen_len$assembly[grep("denovo", pre_gen_len$V1)] <- "de novo"
+pre_gen_len$assembly[grep("REF", pre_gen_len$V1)] <- "reference"
+pre_gen_len$assembly[grep("NON", pre_gen_len$V1)] <- "reference"
+
+pre_gen_len$species <- NA
+for(sp in unique(big_df$species)) {
+  pre_gen_len$species[grep(sp, pre_gen_len$V1) ] <- sp 
+  }
+
+pre_gen_len$species[grep("Trypanosoma_cruzi_CLBrenerEsmeraldo-like", pre_gen_len$V1) ] <- "Trypanosoma_cruzi_CLBrenerEsmeraldo-like" 
+
+
+```
+
+```{r}
+
+gg <- ggplot(pre_gen_len , aes(V3 ) )+
+  geom_histogram(aes(fill = interaction(assembly,redundancy)), alpha=0.3, position = "identity")+scale_x_log10()+
+#  scale_color_manual(values = colors[c(38,48,23,4)] ) + scale_fill_manual(values = colors[c(38,48,23,4)] ) +
+  theme_bw()+ facet_wrap(~species,scales = "free_y")
+
+ggsave("all_denov_vs_ref_Length_PER_GENE.png", gg, width = 25, height = 10)
+
+
+ggplot(pre_gen_len[pre_gen_len$species =="Bodo_saltans",] , aes(V3 ) )+
+  geom_histogram(aes(fill = redundancy), alpha=0.25, position = "identity")+scale_x_log10()+
+  #geom_text(aes(label = value), hjust=-0.5, size = 2) +
+  theme_bw()+ facet_wrap(~ assembly,scales = "free_y")
+
+```
+
+
+
+
+
+
+```{r}
+## sanity check, should return TRUE
+sum(pre_gen_len$V3[pre_gen_len$species =="Bodo_saltans" & pre_gen_len$assembly == "reference"  & pre_gen_len$redundancy == "NR90"]) == df_big_len$ref[df_big_len$species =="Bodo_saltans" & df_big_len$redundancy == "NR90"]
+
+
+sum(pre_gen_len$V3[pre_gen_len$species =="Bodo_saltans" & pre_gen_len$assembly == "reference"  & pre_gen_len$redundancy == "NR90"])
+sum(pre_gen_len$V3[pre_gen_len$species =="Bodo_saltans" & pre_gen_len$assembly == "reference"  & pre_gen_len$redundancy == "ORIGINAL"])
+
+sum(pre_gen_len$V3[pre_gen_len$species =="Bodo_saltans" & pre_gen_len$V3 <=100 & pre_gen_len$assembly == "reference"  & pre_gen_len$redundancy == "NR90"]) /
+df_big_len$ref[df_big_len$species =="Bodo_saltans" & df_big_len$redundancy == "NR90"]
+
+
+sum(pre_gen_len$V3[pre_gen_len$species =="Bodo_saltans" & pre_gen_len$V3 <=100 & pre_gen_len$assembly == "de novo" & pre_gen_len$redundancy == "NR90"]) /
+df_big_len$ref[df_big_len$species =="Bodo_saltans" & df_big_len$redundancy == "NR90"]
+
+
+```
+
+
+## Contig(CDS or transcript)-level length distribution
+
+
+```{r}
+contig_len <- fread("Nucleotides_ORIGINAL_length.tsv")
+
+contig_len$redundancy <- "ORIGINAL"
+
+contig_len$assembly <- NA
+contig_len$assembly[grep("denovo", contig_len$V1)] <- "de novo"
+contig_len$assembly[grep("REF", contig_len$V1)] <- "reference"
+contig_len$assembly[grep("NON", contig_len$V1)] <- "reference"
+
+contig_len$species <- NA
+for(sp in unique(big_df$species)) {
+  contig_len$species[grep(sp, contig_len$V1) ] <- sp 
+  }
+
+contig_len$species[grep("Trypanosoma_cruzi_CLBrenerEsmeraldo-like", contig_len$V1) ] <- "Trypanosoma_cruzi_CLBrenerEsmeraldo-like" 
+
+
+```
+
+```{r}
+
+gg <- ggplot(contig_len , aes(V3 ) )+
+  geom_histogram(aes(fill = interaction(assembly)), alpha=0.5, position = "identity")+scale_x_log10()+
+  geom_vline(xintercept=300, color = "red")+
+  # scale_color_manual(values = colors[c(38,48,23,4)] ) + scale_fill_manual(values = colors[c(38,48,23,4)] ) +
+  theme_bw()+ facet_wrap(~species,scales = "free_y")
+
+ggsave("all_denov_vs_ref_Length_PER_GENE_NUCLEOTIDE.png", gg, width = 25, height = 10)
+
+
+ggplot(pre_gen_len[pre_gen_len$species =="Bodo_saltans",] , aes(V3 ) )+
+  geom_histogram(aes(fill = redundancy), alpha=0.25, position = "identity")+scale_x_log10()+
+  #geom_text(aes(label = value), hjust=-0.5, size = 2) +
+  theme_bw()+ facet_wrap(~ assembly,scales = "free_y")
+
+```
+
+
+## Length plots for the preprint
+```{r}
+gg1 <- ggplot(pre_gen_len[pre_gen_len$redundancy=="NR90",] , aes(V3 ) )+
+  geom_histogram(aes(fill = interaction(assembly,redundancy)), alpha=0.5, position = "identity")+scale_x_log10()+
+#  scale_color_manual(values = colors[c(38,48,23,4)] ) + scale_fill_manual(values = colors[c(38,48,23,4)] ) +
+  theme_bw()+ facet_wrap(~species,scales = "free_y")+
+  xlab("Protein length (aa), log10")+
+  ggtitle("Distribution of protein lengths")
+
+
+gg2 <- ggplot(contig_len , aes(V3 ) )+
+  geom_histogram(aes(fill = interaction(assembly)), alpha=0.5, position = "identity")+scale_x_log10()+
+  geom_vline(xintercept=300, color = "red")+
+  # scale_color_manual(values = colors[c(38,48,23,4)] ) + scale_fill_manual(values = colors[c(38,48,23,4)] ) +
+  theme_bw()+ facet_wrap(~species,scales = "free_y")+
+  xlab("CDS/transcript length (bp), log10")+
+  ggtitle("Distribution of contig (CDS or transcript) lengths")
+
+gg <-(gg1 + theme(legend.position="none")) / gg2  
+
+#gg <- grid.arrange(gg1, gg2, ncol=1)
+
+ggsave("lengths_BUSCO_distr.png", gg, width = 26, height = 13)
+
+```
+
+
+
+
+
+## Different factors influeancing lengths and completeness of BUSCO assemblies
+
+```{r}
+
+factors <- fread("denovo_VS_ref_comp.csv")
+
+
+ggplot(factors, aes(BUSCO_EUK_diff, ref_vs_denov) )+
+     geom_text(aes(label=species), size =2.5)+
+  geom_point(aes(colour=Less_proteins, shape = Less_contigs), size =3)+
+  theme_bw()#+ facet_wrap(~ assembly,scales = "free_y")
+
+
+
+ggplot(factors, aes(BUSCO_EUK_diff, ref_vs_denov) )+
+     geom_text(aes(label=species), size =2.5)+
+  geom_point(aes(colour=Short_proteins, shape = Short_contigs), size =3)+
+  theme_bw()#+ facet_wrap(~ assembly,scales = "free_y")
+
+
+
+ggplot(factors, aes(BUSCO_EUK_denov_value, ref_vs_denov) )+
+     geom_text(aes(label=species), size =2.5)+
+  geom_point(aes(colour=Short_proteins, shape = Short_contigs), size =3)+
+  theme_bw()#+ facet_wrap(~ assembly,scales = "free_y")
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
