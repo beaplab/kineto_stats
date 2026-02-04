@@ -1,0 +1,102 @@
+busco_db	ncbi_taxid	species	strain
+EUK	29760	Vitis_vinifera	
+EUK	10224	Saccoglossus_kowalevskii	
+EUK	10228	Trichoplax_adhaerens	
+EUK	6334	Trichinella_spiralis	
+EUK	10090	Mus_musculus	
+EUK	6183	Schistosoma_mansoni	
+EUK	6669	Daphnia_pulex	
+EUK	5518	Fusarium_graminearum	
+EUK	280699	Cyanidioschyzon_merolae	 strain 10D
+EUK	31033	Takifugu_rubripes	
+EUK	9606	Homo_sapiens	
+EUK	7091	Bombyx_mori	
+EUK	242507	Pyricularia_oryzae	 70-15
+EUK	8364	Xenopus_tropicalis	
+EUK	400682	Amphimedon_queenslandica	
+EUK	217634	Anoplophora_glabripennis	
+EUK	3555	Beta_vulgaris_subsp._vulgaris	
+EUK	7460	Apis_mellifera	
+EUK	4113	Solanum_tuberosum	
+EUK	3055	Chlamydomonas_reinhardtii	
+EUK	7668	Strongylocentrotus_purpuratus	
+EUK	6279	Brugia_malayi	
+EUK	114398	Parasteatoda_tepidariorum	
+EUK	653667	Schizosaccharomyces_cryophilus	 OY26
+EUK	4558	Sorghum_bicolor	
+EUK	28377	Anolis_carolinensis	
+EUK	1357716	Batrachochytrium_salamandrivorans	
+EUK	52612	Calopteryx_splendens	
+EUK	3847	Glycine_max	
+EUK	3702	Arabidopsis_thaliana	
+EUK	29078	Eptesicus_fuscus	
+EUK	144034	Pogonomyrmex_barbatus	
+EUK	9031	Gallus_gallus	
+EUK	321614	Parastagonospora_nodorum	 SN15
+EUK	7955	Danio_rerio	
+EUK	339724	Histoplasma_capsulatum	 NAm1
+EUK	7739	Branchiostoma_floridae	
+EUK	8954	Falco_peregrinus	
+EUK	237631	Ustilago_maydis	521
+EUK	225164	Lottia_gigantea	
+EUK	6412	Helobdella_robusta	
+EUK	39416	Tuber_melanosporum	
+EUK	1392242	Aspergillus_flavus	 AF70
+EUK	936435	Serpula_lacrymans	var. lacrymans S7.3
+EUK	658429	Pseudogymnoascus_destructans	20631-21
+EUK	4555	Setaria_italica	
+EUK	418459	Puccinia_graminis	f. sp. tritici CRL 75-36-700-3
+EUK	227321	Aspergillus_nidulans	FGSC A4
+EUK	7719	Ciona_intestinalis	
+EUK	237561	Candida_albicans	SC5314
+EUK	133434	Acanthaster_planci	
+EUK	7227	Drosophila_melanogaster	
+EUK	3075	Auxenochlorella_protothecoides	
+EUK	7165	Anopheles_gambiae	
+EUK	246409	Rhizopus_delemar	RA 99-880
+EUK	1294385	Saccharomyces_cerevisiae	YJM1573
+EUK	1276529	Zymoseptoria_tritici	ST99CH_1A5
+EUK	6087	Hydra_vulgaris	
+EUK	6239	Caenorhabditis_elegans	
+EUK	27337	Verticillium_dahliae	
+EUK	214684	Cryptococcus_neoformans	 var. neoformans 
+EUK	3760	Prunus_persica	
+EUK	665079	Sclerotinia_sclerotiorum	 1980 UF-70
+EUK	5141	Neurospora_crassa	
+EUK	7897	Latimeria_chalumnae	
+EUK	7237	Drosophila_pseudoobscura	
+EUK	7209	Loa_loa	
+EUK	45351	Nematostella_vectensis	
+EUK	546991	Blumeria_graminis	 f. sp. hordei DH14
+EUK	438503	Catajapyx_aquilonaris	
+EUGL	5671	Leishmania_infantum	
+EUGL	679716	Trypanosoma_brucei_gambiense_DAL972	DAL972
+EUGL	429131	Trypanosoma_rangeli_SC58	 SC58
+EUGL	1068625	Trypanosoma_congolense_IL3000	IL3000
+EUGL	71804	Trypanosoma_grayi	
+EUGL	5705	Endotrypanum_monterogeii	
+EUGL	157538	Leptomonas_pyrrhocoris	
+EUGL	353153	Trypanosoma_cruzi_CLBrener	strain CL Brener
+EUGL	1206056	Leishmania_aethiopica	 L147
+EUGL	5689	Leishmania_tarentolae	
+EUGL	59799	Angomonas_deanei	
+EUGL	353153	Trypanosoma_cruzi_CLBrener	strain CL Brener
+EUGL	5656	Crithidia_fasciculata	
+EUGL	1068625	Trypanosoma_congolense_IL3000	IL3000
+EUGL	85057	Trypanosoma_cruzi_cruzi	
+EUGL	5679	Leishmania_panamensis	
+EUGL	85056	Trypanosoma_cruzi_marinkellei	
+EUGL	67003	Trypanosoma_theileri	
+EUGL	28005	Strigomonas_culicis	
+EUGL	134006	Phytomonas_sp._EM1	 isolate EM1
+EUGL	134013	Phytomonas_sp._Hart1	isolate Hart1
+EUGL	347515	Leishmania_major	 strain Friedlin
+EUGL	1314962	Perkinsela_spCCAP_1560	 CCAP 1560/4
+EUGL	75058	Bodo_saltans	
+EUGL	5663	Leishmania_enriettii	
+EUGL	5684	Leptomonas_seymouri	
+EUGL	1055687	Trypanosoma_vivax	 Y486
+EUGL	62297	Leishmania_turanica	
+EUGL	1055687	Trypanosoma_vivax	 Y486
+EUGL	929439	Leishmania_mexicana	MHOM/GT/2001/U1103
+EUGL	1303197	Leishmania_sp._MAR_LEM2494	
