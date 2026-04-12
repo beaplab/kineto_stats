@@ -1,0 +1,1892 @@
+---
+title: "Intensity_parser"
+author: "Zavadska Daryna"
+date: "2026-02-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, dev = "ragg_png")
+```
+
+
+
+```{r, include=FALSE}
+library("ragg")
+library(patchwork)
+library(DT)
+
+library("tidyverse")
+library("ggplot2")
+library("data.table")
+library("scales")
+library("ggforce")
+library("dgof")
+library("remotes")
+library("smmr")
+#library("coin")
+
+#library("rcompanion")
+
+library("agricolae")
+
+library("gridExtra")
+
+library(cluster)  
+
+library(quantreg)
+library(rcompanion) # for Efron's pseudo r-squared
+
+library(ggpubr) #for geom_bracket
+
+library("stringr")
+```
+
+
+
+
+
+# !! FUNCTIONS
+
+### preprocessing (outlier removal) function
+old version, with k-mean clustering in the separate function (below, fluo_clustering_combiner). Allows to combine filtering of one subset (i.e. ALL) with clusterisation within a different one (i.e. slide).
+Still used to produce the non-clustered datasets for control species for benchmark.
+
+```{r}
+
+fluo_preprocess_adjustable <- function(all_meas, debugplot=FALSE, slideORseries = "slide", outlier_method = "IQR") {
+all_meas_quart <- data.frame()
+
+if(slideORseries == "slide")  { LIST <- unique(all_meas$file_prefix) } 
+  else if(slideORseries == "series") { LIST <- unique(all_meas$exp_series) }
+  else if(slideORseries == "ALL") { LIST <- unique(all_meas$est_sp) }
+  else{print("slideORseries must be either slide, series or ALL - no other options are supported so far.")}
+    
+  for (UNIT in LIST) {
+  
+  if(slideORseries == "slide")  {
+    one_sp1 <- all_meas[all_meas$file_prefix == UNIT,] } 
+    else if(slideORseries == "series") {
+    one_sp1 <- all_meas[all_meas$exp_series == UNIT,] }
+    else if(slideORseries == "ALL") { one_sp1 <- all_meas }
+
+
+for (sp in unique(one_sp1$est_sp)) {
+  
+  one_sp <- one_sp1[one_sp1$est_sp == sp, ]
+
+  quant_filtered_df <- one_sp
+  
+  if (outlier_method == "QUART") {
+    ##### filtering quartiles
+  quant_filtered_df <- quant_filtered_df[which(quant_filtered_df$nucl_sum_int >= summary(one_sp$nucl_sum_int)[2]), ]
+  quant_filtered_df <- quant_filtered_df[which(quant_filtered_df$nucl_sum_int <= quantile(one_sp$nucl_sum_int)[4]), ]
+  }
+  else if(outlier_method == "IQR") {
+      ##### filtering outliers
+       qnt <- quantile(quant_filtered_df$nucl_sum_int, probs=c(.25, .75))
+   H <- 1.5*IQR(quant_filtered_df$nucl_sum_int)
+   quant_filtered_df <- quant_filtered_df[intersect(which(quant_filtered_df$nucl_sum_int < (qnt[2] + H) ) , which(quant_filtered_df$nucl_sum_int > (qnt[1] - H) ) ), ]
+ 
+  }
+  else(print("outlier_method should be either IQR(default) or QUART, no other values currently allowed!"))
+
+  
+  all_meas_quart <- rbind(all_meas_quart, quant_filtered_df)
+  
+    
+  if(debugplot == TRUE){
+  print( ggplot(one_sp, aes(est_sp, as.numeric(nucl_sum_int)))+geom_boxplot()+
+     geom_jitter(position=position_jitter(height=0, width=0.2, seed = 1234), alpha = 0.7)+ #geom_point(aes(shape = sp, colour = file_prefix), size = 2, alpha = 0.7)+
+    theme_classic()+ scale_y_continuous(labels = label_comma())+
+    theme(axis.text.x = element_text(angle =90))+scale_y_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2))+ggtitle(paste0("After filtering", UNIT)) )
+
+  print( ggplot(quant_filtered_df, aes(est_sp, as.numeric(nucl_sum_int)))+geom_boxplot()+
+     geom_jitter(position=position_jitter(height=0, width=0.2, seed = 1234), alpha = 0.7)+ #geom_point(aes(shape = sp, colour = file_prefix), size = 2, alpha = 0.7)+
+    theme_classic()+ scale_y_continuous(labels = label_comma())+
+    theme(axis.text.x = element_text(angle =90))+scale_y_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2))+ggtitle(paste0("After filtering", UNIT)) )
+  }
+  
+}
+}
+return(all_meas_quart)
+}
+
+
+```
+
+
+### k-mean clusterization function
+old version, with outlier filtering in the separate function (above, fluo_preprocess_adjustable). Not used in real kineto predictions, but left here just in case: may be handy in some modifications. Allows to combine filtering of one subset (i.e. ALL) with clusterisation within a different one (i.e. slide).
+```{r, include=FALSE}
+
+fluo_clustering_combiner <- function(sp_by_sp_quart, combination_factors = c("est_sp", "slidedate",  "exp_series_date", "") ) {
+  
+column_combinations <- combn(combination_factors, 2)
+kmean_comb_out <- data.frame()
+
+
+for (i in 1:ncol(column_combinations)) {
+  #debug
+ #print(paste(column_combinations[1, i], column_combinations[2, i]))
+  
+  for (est_sp in unique(sp_by_sp_quart[, column_combinations[1, i]])) {
+    
+    #if ("sp" %in% column_combinations[1, i]) { CLUSTER <- 2 }else{ CLUSTER <- 2 }
+    
+    dd_comb <- data.frame()
+    
+    if (column_combinations[2, i] %in% c("", NA)) {  # Handle missing column case properly
+      local <- sp_by_sp_quart[sp_by_sp_quart[, column_combinations[1, i]] == est_sp,]
+      
+      if (nrow(local[local[, column_combinations[1, i]] == est_sp, ]) > 2) {
+        # Clustering
+        km <- kmeans(local$nucl_sum_int[local[, column_combinations[1, i]] == est_sp], 2)
+        dd <- cbind(local[local[, column_combinations[1, i]] == est_sp, ], cluster = km$cluster)
+        
+        # Determine cluster labels
+        dipl <- dd$cluster[dd$nucl_sum_int == max(dd$nucl_sum_int)][1]
+        dd$ploidy_clust <- ifelse(dd$cluster == dipl, "2n", "1n")
+        
+        
+        dd$suns_for_clust <- paste(column_combinations[1, i], column_combinations[2, i])
+        
+
+        
+        dd_comb <- rbind(dd_comb, dd)
+      } else {
+        next
+      }
+    } else {
+      for (slide in unique(sp_by_sp_quart[, column_combinations[2, i]])) {
+        local <- sp_by_sp_quart[sp_by_sp_quart[, column_combinations[2, i]] == slide,]
+        
+      
+        if (nrow(local[local[, column_combinations[1, i]] == est_sp,]) > 2) {
+          # Clustering
+          km <- kmeans(local$nucl_sum_int[local[, column_combinations[1, i]] == est_sp], 2)
+          dd <- cbind(local[local[, column_combinations[1, i]] == est_sp, ], cluster = km$cluster)
+          
+          # Determine cluster labels
+          dipl <- dd$cluster[dd$nucl_sum_int == max(dd$nucl_sum_int)][1]
+          dd$ploidy_clust <- ifelse(dd$cluster == dipl, "2n", "1n")
+          
+          dd$suns_for_clust <- paste(column_combinations[1, i], column_combinations[2, i])
+          
+          
+          dd_comb <- rbind(dd_comb, dd)
+        } else {
+          next
+        }
+      }
+    }
+    
+    kmean_comb_out <- rbind(kmean_comb_out, dd_comb)
+  }
+}
+## !!! SUBSETTING K-MEAN CLUSTERING OU ONLY TO THAT WITHIN SPECIES!!!!
+kmean_comb_out <- kmean_comb_out[grep("est_sp", kmean_comb_out$suns_for_clust),]
+
+kmean_comb_out$bp_exp_ploidy_corr <- NA
+
+kmean_comb_out$bp_exp_ploidy_corr[kmean_comb_out$ploidy_clust =="1n"] <- kmean_comb_out$bp_exp[kmean_comb_out$ploidy_clust =="1n"] 
+kmean_comb_out$bp_exp_ploidy_corr[kmean_comb_out$ploidy_clust =="2n"] <- kmean_comb_out$bp_exp[kmean_comb_out$ploidy_clust =="2n"]*2
+
+
+return(kmean_comb_out)
+}
+
+```
+
+
+```{r, include=FALSE}
+
+fluo_clustering_combiner_and_filtrator <- function(sp_by_sp_quart, combination_factors = c("est_sp", "slidedate",  "exp_series_date", ""), outlier_method = "IQR" ) {
+  
+column_combinations <- combn(combination_factors, 2)
+## !!! SUBSETTING K-MEAN CLUSTERING OU ONLY TO THAT WITHIN SPECIES (not permitting across-species clusterisation, as it makes no sense)!!!!
+column_combinations <- column_combinations[, which(column_combinations[1,]=="est_sp")]
+## !!! SUBSETTING K-MEAN CLUSTERING OU ONLY TO THAT WITHIN SPECIES!!!!
+
+kmean_comb_out <- data.frame()
+
+
+for (i in 1:ncol(column_combinations)) {
+  #debug
+ #print(paste(column_combinations[1, i], column_combinations[2, i]))
+  
+  for (est_sp in unique(sp_by_sp_quart[, column_combinations[1, i]])) {
+    
+    #if ("sp" %in% column_combinations[1, i]) { CLUSTER <- 2 }else{ CLUSTER <- 2 }
+    
+    dd_comb <- data.frame()
+    
+    if (column_combinations[2, i] %in% c("", NA)) {  # Handle missing column case properly
+      local <- sp_by_sp_quart[sp_by_sp_quart[, column_combinations[1, i]] == est_sp,]
+      
+      
+############## 
+#  print(column_combinations[, i])
+#  print(unique(local$est_sp))
+#  print(nrow( local[local[, column_combinations[1, i]] == est_sp, ] ) > 2 )      
+############## Pre-filtering      
+  quant_filtered_df <- local
+  
+  if (outlier_method == "QUART") {
+    ##### filtering quartiles
+  quant_filtered_df <- quant_filtered_df[which(quant_filtered_df$nucl_sum_int >= summary(local$nucl_sum_int)[2]), ]
+  quant_filtered_df <- quant_filtered_df[which(quant_filtered_df$nucl_sum_int <= quantile(local$nucl_sum_int)[4]), ]
+  }
+  else if(outlier_method == "IQR") {
+      ##### filtering outliers
+       qnt <- quantile(quant_filtered_df$nucl_sum_int, probs=c(.25, .75))
+   H <- 1.5*IQR(quant_filtered_df$nucl_sum_int)
+   quant_filtered_df <- quant_filtered_df[intersect(which(quant_filtered_df$nucl_sum_int <= (qnt[2] + H) ) , which(quant_filtered_df$nucl_sum_int >= (qnt[1] - H) ) ), ]
+ 
+  }
+  else(print("outlier_method should be either IQR or QUART(default), no other values currently allowed!"))
+     
+  local <- quant_filtered_df
+   
+############## 
+############## Clustering      
+      if (nrow(local[local[, column_combinations[1, i]] == est_sp, ]) > 2) {
+        # Clustering
+        km <- kmeans(local$nucl_sum_int[local[, column_combinations[1, i]] == est_sp], 2)
+        dd <- cbind(local[local[, column_combinations[1, i]] == est_sp, ], cluster = km$cluster)
+        
+        # Determine cluster labels
+        dipl <- dd$cluster[dd$nucl_sum_int == max(dd$nucl_sum_int)][1]
+        dd$ploidy_clust <- ifelse(dd$cluster == dipl, "2n", "1n")
+        
+        
+        dd$suns_for_clust <- paste(column_combinations[1, i], column_combinations[2, i])
+############## Clustering 
+
+############## Post-filtering 
+        dd_backup <- dd
+        
+        for(ploidy in unique(dd_backup$ploidy_clust)){
+           quant_filtered_df <- dd_backup[dd_backup$ploidy_clust == ploidy, ]
+  
+         if (outlier_method == "QUART") {
+    ##### filtering quartiles
+         quant_filtered_df <- quant_filtered_df[which(quant_filtered_df$nucl_sum_int >= summary(local$nucl_sum_int)[2]), ]
+         quant_filtered_df <- quant_filtered_df[which(quant_filtered_df$nucl_sum_int <= quantile(local$nucl_sum_int)[4]), ]
+          }
+         else if(outlier_method == "IQR") {
+      ##### filtering outliers
+         qnt <- quantile(quant_filtered_df$nucl_sum_int, probs=c(.25, .75))
+         H <- 1.5*IQR(quant_filtered_df$nucl_sum_int)
+        quant_filtered_df <- quant_filtered_df[intersect(which(quant_filtered_df$nucl_sum_int <= (qnt[2] + H) ) , which(quant_filtered_df$nucl_sum_int >= (qnt[1] - H) ) ), ]
+ 
+       }
+          else(print("outlier_method should be either IQR or QUART(default), no other values currently allowed!"))
+     
+          #dd <- quant_filtered_df 
+          dd_comb <- rbind(dd_comb, quant_filtered_df)
+        }
+ 
+   
+############## 
+        
+
+    
+      } else {
+        next
+      }
+    } else {
+      for (slide in unique(sp_by_sp_quart[, column_combinations[2, i]])) {
+        local <- sp_by_sp_quart[sp_by_sp_quart[, column_combinations[1, i]] == est_sp,]
+        local <- local[local[, column_combinations[2, i]] == slide,]
+##############
+# print(column_combinations[, i])
+# print(unique(local$est_sp))
+# print(nrow( local[local[, column_combinations[1, i]] == est_sp, ] ) > 2 )
+############## Pre-filtering      
+  quant_filtered_df <- local
+
+  if (outlier_method == "QUART") {
+    ##### filtering quartiles
+  quant_filtered_df <- quant_filtered_df[which(quant_filtered_df$nucl_sum_int >= summary(local$nucl_sum_int)[2]), ]
+  quant_filtered_df <- quant_filtered_df[which(quant_filtered_df$nucl_sum_int <= quantile(local$nucl_sum_int)[4]), ]
+  }
+  else if(outlier_method == "IQR") {
+      ##### filtering outliers
+       qnt <- quantile(quant_filtered_df$nucl_sum_int, probs=c(.25, .75))
+   H <- 1.5*IQR(quant_filtered_df$nucl_sum_int)
+    quant_filtered_df <- quant_filtered_df[intersect(which(quant_filtered_df$nucl_sum_int <= (qnt[2] + H) ) , which(quant_filtered_df$nucl_sum_int >= (qnt[1] - H) ) ), ]
+ 
+  }
+  else(print("outlier_method should be either IQR or QUART(default), no other values currently allowed!"))
+     
+  local <- quant_filtered_df
+   
+############## 
+############## Clustering      
+        if (nrow(local[local[, column_combinations[1, i]] == est_sp,]) > 2) {
+          # Clustering
+          km <- kmeans(local$nucl_sum_int[local[, column_combinations[1, i]] == est_sp], 2)
+          dd <- cbind(local[local[, column_combinations[1, i]] == est_sp, ], cluster = km$cluster)
+          
+          # Determine cluster labels
+          dipl <- dd$cluster[dd$nucl_sum_int == max(dd$nucl_sum_int)][1]
+          dd$ploidy_clust <- ifelse(dd$cluster == dipl, "2n", "1n")
+          
+          dd$suns_for_clust <- paste(column_combinations[1, i], column_combinations[2, i])
+############## Clustering            
+############## Post-filtering      
+#  print(unique(quant_filtered_df$est_sp))
+
+        dd_backup <- dd
+        
+        for(ploidy in unique(dd_backup$ploidy_clust)){
+           quant_filtered_df <- dd_backup[dd_backup$ploidy_clust == ploidy, ]
+  
+         if (outlier_method == "QUART") {
+    ##### filtering quartiles
+         quant_filtered_df <- quant_filtered_df[which(quant_filtered_df$nucl_sum_int >= summary(local$nucl_sum_int)[2]), ]
+         quant_filtered_df <- quant_filtered_df[which(quant_filtered_df$nucl_sum_int <= quantile(local$nucl_sum_int)[4]), ]
+          }
+         else if(outlier_method == "IQR") {
+      ##### filtering outliers
+         qnt <- quantile(quant_filtered_df$nucl_sum_int, probs=c(.25, .75))
+         H <- 1.5*IQR(quant_filtered_df$nucl_sum_int)
+        quant_filtered_df <- quant_filtered_df[intersect(which(quant_filtered_df$nucl_sum_int <= (qnt[2] + H) ) , which(quant_filtered_df$nucl_sum_int >= (qnt[1] - H) ) ), ]
+ 
+       }
+          else(print("outlier_method should be either IQR or QUART(default), no other values currently allowed!"))
+     
+          #dd <- quant_filtered_df 
+          dd_comb <- rbind(dd_comb, quant_filtered_df)
+        }
+        
+          
+        } else {
+          next
+        }
+      }
+    }
+    
+    kmean_comb_out <- rbind(kmean_comb_out, dd_comb)
+  }
+}
+
+
+kmean_comb_out$bp_exp_ploidy_corr <- NA
+
+kmean_comb_out$bp_exp_ploidy_corr[kmean_comb_out$ploidy_clust =="1n"] <- kmean_comb_out$bp_exp[kmean_comb_out$ploidy_clust =="1n"] 
+kmean_comb_out$bp_exp_ploidy_corr[kmean_comb_out$ploidy_clust =="2n"] <- kmean_comb_out$bp_exp[kmean_comb_out$ploidy_clust =="2n"]*2
+
+
+return(kmean_comb_out)
+}
+
+
+```
+
+
+
+
+### Quantile regression-based functions
+
+for "real" kineto predictions
+```{r, include=FALSE}
+
+quantile_for_clustered_KINETOS <- function(SUBS_sp, slideORseries = "ALL", dataset, debugplot = FALSE ){
+
+to_return <- data.frame()
+plotlist <- list()
+
+    if(slideORseries == "slide")  { LIST <- unique(SUBS_sp$file_prefix) } 
+    else if(slideORseries == "series") { LIST <- unique(SUBS_sp$exp_series) }
+else if(slideORseries == "ALL") { LIST <- c("ALL") }
+  else{stop("slideORseries must be either slide, series or ALL - no other options are supported so far.")}
+    
+  for (UNIT in LIST) {
+  
+  if(slideORseries == "slide")  {
+    local1 <- SUBS_sp[SUBS_sp$file_prefix == UNIT,] } 
+    else if(slideORseries == "series") {
+    local1 <- SUBS_sp[SUBS_sp$exp_series == UNIT,]}
+    else if(slideORseries == "ALL") {
+    local1 <- SUBS_sp
+  }
+  
+ testkin_sp <- unique(local1$sp[grep( paste( unique(SUBS_sp$test_species), collapse = "|") , local1$sp)])  
+  for (sp in testkin_sp) {
+    #taking out one of test species - !!! THE ORDER OF NEXT TWO LINES MATTERS !!!
+    
+    TEST <- local1[local1$sp == sp,]
+    local <- local1[!(local1$sp %in% testkin_sp),]
+    #debug below
+      if (nrow(local) <=2) {print( paste("!!! DISCARDED DUE TO LACK OF DATAPOINTS:", unique(TEST$file_prefix), unique(TEST$suns_for_clust)) ) 
+        next } #here it skips cases where there is only one control cell left 
+      
+ #   print(unique(local$file_prefix))#uncomment for debug 
+ #   print(unique(local$suns_for_clust))
+    
+    
+  local$bp_exp_ploidy_corr <- as.numeric(local$bp_exp_ploidy_corr)
+  local$nucl_sum_int <- as.numeric(local$nucl_sum_int)
+#building regression  
+  qreg <- rq(bp_exp_ploidy_corr~nucl_sum_int, data=local)
+
+ #p-value
+  summary <- summary.rq(qreg, se='boot')
+  pvalue <- summary$coefficients[8]
+  SE <- summary$coefficients[4]
+  
+  #calculating Efron's pseudo r-squared
+  R2 <- as.numeric(rcompanion::accuracy(qreg)[[2]][9])
+  #preparing dataframes
+
+ ## tmp <- tmp[tmp$estimate != "nucl_df", ] - ONLY RELEVANT WHEN COUNTING KINETOS
+ ## TEST <- tmp[grep(unique(tmp$test_species),tmp$sp), ] - ONLY RELEVANT WHEN COUNTING KINETOS
+  
+  TEST$if_test_sp <- "TEST_kineto"
+  local$if_test_sp <- "CONTROL_species"
+  local$lower <- "NA"
+  local$higher <- "NA"
+  
+  #prediction step
+  new <- data.frame(nucl_sum_int = as.numeric(TEST$nucl_sum_int))
+  prediction <- data.frame(predict.rq(qreg, new,  interval = "confidence"))
+  TEST$bp_exp <- prediction$fit
+  TEST$lower <- prediction$lower
+  TEST$higher <- prediction$higher
+  
+  TEST$bp_exp_ploidy_corr <- prediction$fit
+  TEST$suns_for_clust <- unique(local$suns_for_clust)
+  #TEST$cluster <- "Undefined"
+  #TEST$ploidy_clust <- "Undefined"
+  
+  
+  
+  #combining dataframes
+   local_combined <- rbind(local, TEST)
+     local_combined$pvalue <- pvalue
+     local_combined$SE <- SE
+     local_combined$coeficcient <- coef(qreg)[["nucl_sum_int"]]
+     local_combined$intercept <- coef(qreg)[["(Intercept)"]]
+      local_combined$R2 <- R2
+     local_combined$regression_set <- paste(sp,  unique(local$suns_for_clust) , UNIT)
+     
+if(debugplot == TRUE) {
+       gg <-  ggplot(local_combined[-grep("_KINnucl_df", local_combined$est_sp), ], aes(nucl_sum_int, bp_exp_ploidy_corr) )+
+          geom_ribbon(aes(ymin=as.numeric(lower), ymax=as.numeric(higher)  ), fill="cyan", alpha=0.2)+
+          geom_point(aes(shape = est_sp, colour = est_sp),size =3, alpha = 0.5)+
+          geom_abline(slope = coef(qreg)[["nucl_sum_int"]], intercept = coef(qreg)[["(Intercept)"]] )+
+          scale_x_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2))+
+          scale_y_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2))+
+    theme_linedraw()+
+    ggtitle(paste(sp,  unique(local$suns_for_clust) , UNIT) )+
+    scale_shape_manual(values=1:20) +
+    geom_text(aes(label = paste0("p-value = ", round(pvalue, digits=5) ) ), x = mean(local$nucl_sum_int), y = max(local$bp_exp_ploidy_corr), check_overlap = TRUE, size=5)
+
+print(gg)
+plotlist[[length(plotlist) + 1]] <- (gg) }  
+     
+     #giant_fitted <- rbind(giant_fitted, local_combined) 
+   to_return <- rbind(to_return, local_combined)
+  }
+}
+#print(paste(sp,  unique(local$suns_for_clust) , UNIT) )
+     
+if(debugplot == TRUE) {
+pdf(paste0("KINETO_reg_debug_", slideORseries, dataset, ".pdf") )
+for (p in plotlist) {
+    print(p) }
+dev.off()
+}
+
+return(to_return)
+
+
+}
+
+```
+
+
+```{r, include=FALSE}
+
+
+quantile_for_clustered_BOOTSTRAPS <- function(SUBS_sp, slideORseries = "ALL", bad_slide_list=c(), bad_species_list=c() , dataset, debugplot = FALSE ) { 
+  
+  giant_fitted <- data.frame()
+  plotlist <- list()
+  
+    if(slideORseries == "slide")  { LIST <- unique(SUBS_sp$file_prefix) } 
+    else if(slideORseries == "series") { LIST <- unique(SUBS_sp$exp_series) }
+    else if(slideORseries == "ALL") { LIST <- c("ALL") }
+  else{stop("slideORseries must be either slide, series or ALL - no other options are supported so far.")}
+    
+  for (UNIT in LIST) {
+  
+  if(slideORseries == "slide")  {
+    local1 <- SUBS_sp[SUBS_sp$file_prefix == UNIT,] } 
+    else if(slideORseries == "series") {
+    local1 <- SUBS_sp[SUBS_sp$exp_series == UNIT,]}
+    else if(slideORseries == "ALL") {
+    local1 <- SUBS_sp
+  }
+  
+  
+  for (sp in unique(local1$sp)) { 
+     print(paste(UNIT,  sp))
+    
+    #taking out one of test species - !!! THE ORDER OF NEXT TWO LINES MATTERS !!!
+    
+    TEST <- local1[local1$sp == sp,]
+    local <- local1[local1$sp != sp,]
+      if (nrow(local) <=2) {print( paste("!!! DISCARDED DUE TO LACK OF DATAPOINTS:", unique(TEST$file_prefix), unique(TEST$suns_for_clust)) ) 
+        next } #here it skips cases where there is only one control cell left 
+    # print(nrow(local))
+    
+  local$bp_exp_ploidy_corr <- as.numeric(local$bp_exp_ploidy_corr)
+  local$nucl_sum_int <- as.numeric(local$nucl_sum_int)
+#building regression  
+  qreg <- rq(bp_exp_ploidy_corr~nucl_sum_int, data=local)
+
+ #p-value
+  summary <- summary.rq(qreg, se='boot')
+  pvalue <- summary$coefficients[8]
+  SE <- summary$coefficients[4]
+  #preparing dataframes
+
+  #calculating Efron's pseudo r-squared
+  R2 <- as.numeric(rcompanion::accuracy(qreg)[[2]][9])
+ ## tmp <- tmp[tmp$estimate != "nucl_df", ] - ONLY RELEVANT WHEN COUNTING KINETOS
+ ## TEST <- tmp[grep(unique(tmp$test_species),tmp$sp), ] - ONLY RELEVANT WHEN COUNTING KINETOS
+  
+  TEST$if_test_sp <- "TEST_bootstrap"
+  local$if_test_sp <- "CONTROL_species"
+  local$lower <- "NA"
+  local$higher <- "NA"
+  
+  #prediction step
+   #exception for one slide, otherwise throws the error
+  new <- data.frame(nucl_sum_int = as.numeric(TEST$nucl_sum_int))
+ 
+    if (UNIT %in% bad_slide_list  & sp %in% bad_species_list ) { prediction <- data.frame(predict.rq(qreg, new,  interval = "none"))
+    TEST$bp_exp <- prediction$predict.rq.qreg..new..interval....none..
+  TEST$lower <- NA
+  TEST$higher <- NA 
+  TEST$bp_exp_ploidy_corr <- prediction$predict.rq.qreg..new..interval....none..
+  } else
+    { prediction <- data.frame(predict.rq(qreg, new,  interval = "confidence"))
+  TEST$bp_exp <- prediction$fit
+  TEST$lower <- prediction$lower
+  TEST$higher <- prediction$higher 
+  TEST$bp_exp_ploidy_corr <- prediction$fit }
+  
+  TEST$suns_for_clust <- dataset
+#  TEST$cluster <- "Undefined"
+#  TEST$ploidy_clust <- "Undefined"
+  
+
+
+  
+  #combining dataframes
+   local_combined <- rbind(local, TEST)
+     local_combined$pvalue <- pvalue
+     local_combined$SE <- SE
+     local_combined$coeficcient <- coef(qreg)[["nucl_sum_int"]]
+     local_combined$intercept <- coef(qreg)[["(Intercept)"]]
+     local_combined$R2 <- R2
+     local_combined$bootstrap_setting <- paste(sp, dataset, UNIT)
+     
+if(debugplot == TRUE) {
+       gg <-  ggplot(local_combined, aes(nucl_sum_int, bp_exp_ploidy_corr) )+
+    geom_point(aes(shape = est_sp, colour = est_sp),size =3, alpha = 0.5)+geom_abline(slope = coef(qreg)[["nucl_sum_int"]] , intercept =  coef(qreg)[["(Intercept)"]])+
+    theme_linedraw()+
+    ggtitle(paste(sp,  unique(local$suns_for_clust) , UNIT) )+
+  geom_ribbon(aes(ymin=as.numeric(lower), ymax=as.numeric(higher)  ), fill="cyan", alpha=0.2)+
+    scale_shape_manual(values=1:20) +
+    geom_text(aes(label = paste0("p-value = ", round(pvalue, digits=5) ) ), x = mean(local$nucl_sum_int), y = max(local$bp_exp_ploidy_corr), check_overlap = TRUE, size=5)
+
+print(gg)
+plotlist[[length(plotlist) + 1]] <- (gg) }  
+     
+
+giant_fitted <- rbind(giant_fitted, local_combined)
+
+  }  
+  }
+  
+if(debugplot == TRUE) {
+pdf(paste0("Bootstrap_reg_debug_", slideORseries, dataset, ".pdf") )
+for (p in plotlist) {
+    print(p) }
+dev.off()
+}
+
+  return(giant_fitted)
+}
+
+```
+
+
+
+### Downstream processing
+
+```{r, include=FALSE}
+
+bind_pred_vs_actual_BOOTSTRAPS <- function(pred, actual, slideORseries = "slide") {
+
+pred$ALL_PARAMS <- paste(pred$sp, pred$cell_coord, pred$suns_for_clust, pred$file_prefix, pred$ploidy_cluster)
+actual$ALL_PARAMS <- paste(actual$sp, actual$cell_coord,actual$suns_for_clust, actual$file_prefix, pred$ploidy_cluster)
+
+
+#debug
+# pred$if_test_sp[which((pred$ALL_PARAMS %in% actual$ALL_PARAMS) == FALSE)]
+# actual$ALL_PARAMS[actual$cell_coord == "[1149, 1736]"] 
+# unique(pred$ALL_PARAMS[pred$cell_coord == "[1149, 1736]"])
+ 
+ 
+actual$validation <- "ACTUAL"
+pred$validation <- "BOOTSTRAP-LIKE_PREDICTED"
+
+for (i in unique(pred$ALL_PARAMS)) {
+  pred$diff_from_actual[pred$ALL_PARAMS == i] <- pred$bp_exp[pred$ALL_PARAMS == i] - actual$bp_exp_ploidy_corr[actual$ALL_PARAMS == i]
+  pred$PERCENTdiff_from_actual[pred$ALL_PARAMS == i] <- (pred$bp_exp[pred$ALL_PARAMS == i] - actual$bp_exp_ploidy_corr[actual$ALL_PARAMS == i])/actual$bp_exp_ploidy_corr[actual$ALL_PARAMS == i]
+}
+
+actual[ , names(pred)[(names(pred) %in% names(actual) )==FALSE]] <- NA
+
+pred_actual_toplot <- rbind(pred, actual)
+
+pred_actual_toplot$suns_for_clust <- paste(pred_actual_toplot$suns_for_clust, slideORseries)
+
+return(pred_actual_toplot)
+}
+
+```
+
+Estimates medians from predicted genome sizes across the subsets specified
+```{r}
+
+predictedbp_median_estimator <- function(test_kinetos_all_clust, subset_for_median_estimation = c("ploidy__exp_series_date", "ploidy__slidedate", "ploidy", "slidedate", "exp_series_date"), BS_replicates = 5000 ) {
+
+median_summary_regressed <- data.frame()
+
+if (subset_for_median_estimation %in%  c("ploidy__exp_series_date", "ploidy__slidedate", "ploidy", "slidedate", "exp_series_date") == FALSE) {
+  stop("subset_for_median_estimation must be one of: 'ploidy__exp_series_date', 'ploidy__slidedate', 'ploidy', 'slidedate', 'exp_series_date'")
+  
+}
+group_vars <- switch(
+  subset_for_median_estimation,
+  "ploidy" = c("ploidy_clust"),
+  "slidedate"  = c("exp_series_date", "file_prefix"),
+  "exp_series_date"   = c("exp_series_date"),
+  "ploidy__exp_series_date" = c("ploidy_clust", "exp_series_date"),
+  "ploidy__slidedate" = c("ploidy_clust", "exp_series_date", "file_prefix")
+)
+
+
+
+test_kinetos_all_clust <- data.frame(test_kinetos_all_clust)
+
+
+grouped_data <- split(test_kinetos_all_clust, test_kinetos_all_clust[group_vars])
+
+# Loop through each group
+for (group_name in names(grouped_data)) {
+  
+  group_df <- grouped_data[[group_name]]
+  
+
+
+  # debug
+  #print(paste("Processing:", paste(keys, collapse = ", ")))
+
+  for (reger_type in unique(group_df$suns_for_clust)) {
+  for (species in unique(group_df$est_sp)) {
+    
+   tmp <- group_df[group_df$suns_for_clust == reger_type, ]
+   tmp <- tmp[tmp$est_sp == species,]
+      #debug
+    # print(unique(tmp$sp))
+   #  print( length(unique(tmp$cell_coord))==nrow(tmp) )
+  if (nrow(tmp)<=2) next
+#    if ("file_prefix" %in% group_vars & nrow(tmp)<=2) next
+
+   
+   #print(c(species, reger_type, nrow(tmp)))
+   
+   BS <- groupwiseMedian(bp_exp_ploidy_corr~1, tmp, R = BS_replicates)
+   
+   MS <- data.frame("sp" = species, 
+                    #"file_prefix" = paste( unique(tmp$file_prefix) ), 
+                    #"exp_series_date" = unique(tmp$exp_series_date), 
+                    "MEDIAN_int" = median(tmp$nucl_sum_int),
+                    
+                    "MEDIAN_bp_exp" = median(tmp$bp_exp_ploidy_corr), 
+                    "quant_lower" = quantile((tmp$bp_exp_ploidy_corr))[2],
+                    "quant_higher" = quantile((tmp$bp_exp_ploidy_corr))[4],
+                    
+                    #older version below
+                   # "mean_lower" = mean(as.numeric(tmp$lower)), 
+                   # "mean_higher" = mean(as.numeric(tmp$higher)),  
+                   
+                  "mean_lower" =  BS$Bca.lower ,
+                   "mean_higher" = BS$Bca.upper ,
+                    "method"=reger_type, "if_test_sp" = unique(tmp$if_test_sp), 
+                    #"ploidy" = unique(tmp$ploidy_clust), 
+                    "cell_count"=length(unique(tmp$cell_coord)), 
+                    "clustered_BY" = subset_for_median_estimation, 
+                    "ploidy_clust" = paste( unique(tmp$ploidy_clust) ) )
+   
+   
+   MS$set_for_median <- paste( unique( tmp[, group_vars, drop=TRUE] ), collapse = "__")
+   
+   for ( i in c( 1:length(str_split(unique(MS$clustered_BY), "__", simplify = T)) ) ){
+        MS[, str_split(unique(MS$clustered_BY), "__", simplify = T)[1,i] ] <- str_split(unique(MS$set_for_median), "__", simplify = T)[i]
+   }
+
+   
+   
+   median_summary_regressed <- rbind(median_summary_regressed, MS) 
+
+  
+  }}  
+  
+ 
+  }
+
+return(median_summary_regressed)
+}
+
+```
+
+
+
+# PRE-PROCESSING (GENERATING ALL_MEAS AND SUBSET FROM IT)
+
+### Expected genome sizes dataframe
+
+```{r}
+
+expected_sizes_trunc <- data.frame("sp"= c("Diplo", "Capsa", "Cflexa", "Sros", "Yeast"),
+"bp" =  c(280283133, 27398043, 56404751, 55448948, 11529746) )
+
+```
+
+
+
+
+### Overview of available measurements
+
+set path to the folder containing subfolders with measurements in your filesystem
+```{r}
+
+MEAS_ANALYSIS <- "/home/darynazavadska/Data/kinetos_born_again/MEAS_ANALYSIS/"
+
+```
+
+
+modify paths below. The .csv with measurements are normally stored in the folders in the path, names of the folders should be added to the list in the first line of this chunk. In this case, the names of the folders correspond to the date/ID of a staining experiment, but can be whatever. 
+!!!!!! it is IMPORTANT, though that UPDATED_images_taken_data.csv contains the exp_series_date column information that corresponds with the folder names, and file_prefix column in UPDATED_images_taken_data.csv corresponds to the prefixes of files stored in the folders of the corresponding names. NOTHING WILL HAPPEN IF not all files from file_prefix column are stored in the folder, BUT if file with a different prefix than specified in file_prefix is stored in a folder, throws error.
+
+UPDATED_images_taken_data.csv essentially contains data on the experiment, it is manually updated after every experimental set is imaged.
+
+
+Chunk below to get an overview of the number of slides which were measured. Can be removed/commented with no effect.
+```{r, echo=FALSE, results='hide', message=FALSE, warning=FALSE}
+list <- c("20032025_thickstacks_noHU","25022025","1022025", "14022025", "21122024", "12042025", "27052025", "7052025", "25042025", "12072025", "5072025", "12092025", "6092025", "9102025", "26092025","22112025", "9112025")
+# "20032025_thickstacks_HU", 
+# "31032025" 
+meas_files <- data.frame("exp_series_date"=c(), "file"=c())
+
+for (suffix in list) {
+files <- list.files(paste0(MEAS_ANALYSIS, suffix), pattern = "nucl_df")
+tmp <- data.frame("exp_series_date"=rep(suffix, length(files)), "file"=c(files)) 
+meas_files <- rbind(meas_files, tmp)
+}
+
+meas_files$file_prefix <- str_replace(meas_files$file, "-.*", "")
+meas_files$date_prefix <- paste0(meas_files$exp_series_date, "_", meas_files$file_prefix )
+
+parameters <- fread("UPDATED_images_taken_data.csv")
+parameters$date_prefix <- paste0(parameters$exp_series_date, "_", parameters$file_prefix )
+
+to_see <- data.frame()
+
+for (i in unique(meas_files$date_prefix)) {
+ #print(i)
+  tmp <- data.frame(parameters[grep(i,parameters$date_prefix)])
+  tmp$images_processed <- nrow(meas_files[meas_files$date_prefix==i,])
+  to_see <- rbind(to_see, tmp)
+}
+
+#to_see 
+
+gg1 <- ggplot(to_see, aes(images_processed, date_prefix))+geom_point(aes(colour = test_species, shape = as.factor(quant_stain_exp)), size =3)+theme_linedraw()+theme(axis.text.x = element_text(angle =90))
+
+ggsave("slides_measured_counts.png", gg1, height = 10, width = 10)
+
+```
+
+
+Actually creates a big table with all the measurements which will be used throughout the calc.
+
+```{r, results='hide', message=FALSE, warning=FALSE}
+list <- c("20032025_thickstacks_noHU", "25022025","1022025", "14022025", "21122024", "12042025", "27052025", "7052025", "25042025", "12072025", "5072025", "12092025", "6092025", "9102025", "26092025","22112025", "9112025")
+# "20032025_thickstacks_HU", 
+# "31032025" 
+
+all_meas <- data.frame()
+
+for (suffix in list) {
+
+KIN_nuclDNA_raw_meas <- list.files(paste0(MEAS_ANALYSIS, suffix), pattern = "KIN_nuclDNA")
+
+KIN_nuclDNA_all_meas <- data.frame()
+
+for (i in KIN_nuclDNA_raw_meas) {
+  df <- fread(paste0(MEAS_ANALYSIS, suffix, "/", i))
+    if (length(KIN_nuclDNA_raw_meas)==0) {print( paste("Warning! No Kinetoplastid nuclear DNA measurements found for slide", suffix));  next}
+  
+  KIN_nuclDNA_all_meas <- rbind(KIN_nuclDNA_all_meas, df)
+}
+
+if (length(KIN_nuclDNA_raw_meas)==0) {}else{
+KIN_nuclDNA_all_meas$estimate <- "KIN_nuclDNA"
+KIN_nuclDNA_all_meas <- KIN_nuclDNA_all_meas[!is.na(KIN_nuclDNA_all_meas$sp),]
+KIN_nuclDNA_all_meas$exp_series <- suffix
+}
+
+############
+kDNA_raw_meas <- list.files(paste0(MEAS_ANALYSIS, suffix), pattern = "kDNA_df")
+kDNA_all_meas <- data.frame()
+
+for (i in kDNA_raw_meas) {
+  df <- fread(paste0(MEAS_ANALYSIS, suffix, "/", i))
+  if (length(kDNA_raw_meas)==0) {print( paste("Warning! No Kinetoplastid kDNA measurements found for slide", suffix));  next}
+  
+  kDNA_all_meas <- rbind(kDNA_all_meas, df)
+}
+
+if (length(KIN_nuclDNA_raw_meas)==0) {}else{
+kDNA_all_meas$estimate <- "kDNA_df"
+kDNA_all_meas <- kDNA_all_meas[!is.na(kDNA_all_meas$sp),]
+kDNA_all_meas$exp_series <- suffix
+}
+##############
+nucl_df_raw_meas <- list.files(paste0(MEAS_ANALYSIS, suffix), pattern = "nucl_df")
+nucl_df_all_meas <- data.frame()
+
+for (i in nucl_df_raw_meas) {
+  df <- fread(paste0(MEAS_ANALYSIS, suffix, "/", i))
+  nucl_df_all_meas <- rbind(nucl_df_all_meas, df)
+}
+nucl_df_all_meas$estimate <- "nucl_df"
+nucl_df_all_meas <- nucl_df_all_meas[!is.na(nucl_df_all_meas$sp),]
+nucl_df_all_meas$exp_series <- suffix
+###
+
+nucl_df_all_meas_to_bind <- nucl_df_all_meas[,c( "V1", "id", "cell", "sp", "cell_coord", "cyto_mean_int", "nucl_sum_int", "nucl_sum_int_corr", "estimate", "exp_series" )]
+
+  if (length(kDNA_raw_meas)==0 & length(KIN_nuclDNA_raw_meas)==0 ) {all_meas <- rbind(data.table(all_meas), nucl_df_all_meas_to_bind, use.names=FALSE)}
+  else{    all_meas <- rbind(data.table(all_meas), nucl_df_all_meas_to_bind, KIN_nuclDNA_all_meas, kDNA_all_meas,  use.names=FALSE)    }
+
+
+}
+###
+
+if (length(grep("ch1", all_meas$id))<nrow(all_meas)) {
+  print("Warning! Some channels might have been incorrectly assigned!")
+  print("check following images:")
+  print(unique(all_meas$id[!str_detect(all_meas$id, "ch1")]))
+}
+
+all_meas$est_sp <- paste0(all_meas$sp, all_meas$estimate)
+
+all_meas$expected_sizes <- NA 
+
+for (sp in expected_sizes_trunc$sp) {
+  all_meas$expected_sizes[all_meas$sp ==sp] <- expected_sizes_trunc$bp[expected_sizes_trunc$sp==sp]
+}
+
+all_meas_backup <- all_meas
+
+
+```
+
+
+
+### To rename errorneous filenames which cause tremendous mental damage and time loss, run text output of something like this in commandline, in corresponding folder.
+Do not forget to update UPDATED_images_taken_data.csv with corresponding names.
+```{bash, eval = FALSE , echo=FALSE, results='hide', message=FALSE, warning=FALSE, include=FALSE}
+
+for f in exp_12_5_Gemkin_Cflexa_DAPI600ngml_thickstack-*_ch1_*_20032025.csv; do
+  base="exp_12_5_Gemkin_Cflexa"
+  date="20032025"
+  # Extract stack part
+  stack=$(echo "$f" | grep -o "thickstack-[^_]*")
+  # Extract ch1 tag
+  ch1=$(echo "$f" | grep -o "ch1_[^_]*")
+  # Construct new filename
+  new="${base}_${date}_DAPI600ngml_${stack}_${ch1}_nuclDNA_df.csv"
+  echo mv "$f" "$new"
+done
+
+#Also, to substitute ids inside every file
+for f in 25022025_exp_12_5_Gemkin_Cflexa*.csv; do sed -i 's/exp/25022025_exp/g' $f ; done
+
+for f in exp_12_5_Gemkin_Cflexa_20032025_DAPI600ngml_thickstack*.csv; do sed -i 's/Cflexa_/Cflexa_20032025_/g' $f ; done
+
+for f in exp_12_5_Gre65_Cflexa_20032025_DAPI600ngml_thickstack*.csv; do sed -i 's/DAPI/20032025_DAPI/g' $f ; done
+for f in exp_12_5_Gre65_Sros_20032025_DAPI600ngml_thickstack*.csv; do sed -i 's/DAPI/20032025_DAPI/g' $f ; done
+
+
+```
+
+
+
+
+### Adding staining parameters
+
+```{r, echo=FALSE, results='hide', message=FALSE, warning=FALSE}
+all_meas <- data.frame(all_meas)
+
+all_meas$exp_series_date <- NA
+all_meas$file_prefix <- NA
+all_meas$AT_stain <- NA
+all_meas$AT_stain_conc <- NA
+all_meas$quant_stain <- NA
+all_meas$quant_stain_conc <- NA
+all_meas$AT_stain_laser_int <- NA
+all_meas$AT_stain_exp <- NA
+all_meas$quant_stain_laser_int <- NA
+all_meas$quant_stain_exp <- NA
+all_meas$replicate <- NA
+all_meas$other <- NA
+all_meas$test_species <- NA
+all_meas$images_taken <- NA
+all_meas$images_processed <- NA
+
+parameters <- fread("UPDATED_images_taken_data.csv")
+# !!!!!!!!!!! SUBSET PARAMETERS IF NEEDED (IN CASE OF IDENTICAL NAMES IN DIFFERENT SERIES TROWS ERRORS - BECAUSE YOU SHOULDNT NAME THEM THAT WAY)
+
+
+
+for(pref in unique(parameters$file_prefix)){
+  
+  all_meas[grep(paste0(pref), all_meas$id), 13:ncol(all_meas)] <- parameters[grep(paste0("\\b", pref, "\\b"), parameters$file_prefix)]
+}
+
+#all_meas[grep("Gemkin", all_meas$sp), ]
+#all_meas[grep(paste0(pref), all_meas$id),]
+
+```
+
+
+
+### Subsetting dataset
+
+Important chunk. 
+
+```{r, results='hide', message=FALSE, warning=FALSE}
+sp_by_sp <- all_meas
+#sp_by_sp <- sp_by_sp[-grep("_B" , sp_by_sp$file_prefix ),]
+
+sp_by_sp <- sp_by_sp[sp_by_sp$quant_stain_exp == 12.5, ]
+sp_by_sp <- sp_by_sp[sp_by_sp$quant_stain == "PI",]
+
+#by amount of slides processed
+tmp <- to_see[to_see$file_prefix %in% unique(sp_by_sp$file_prefix),]
+sp_by_sp$images_processed <- tmp$images_processed[match(sp_by_sp$file_prefix, tmp$file_prefix)]
+
+
+sp_by_sp <- sp_by_sp[which(sp_by_sp$sp != "Theca"),]
+
+sp_by_sp <- sp_by_sp[which(sp_by_sp$sp != "Cflexa"),]
+
+sp_by_sp <- sp_by_sp[which(sp_by_sp$sp != "Cruz"),]
+
+#sp_by_sp <- sp_by_sp[which(sp_by_sp$sp != "Yeast"),]
+
+#sp_by_sp <- sp_by_sp[sp_by_sp$images_processed >= 5,]
+
+```
+
+
+
+### Matching with bp_exp and backing up
+
+```{r, results='hide', message=FALSE, warning=FALSE}
+
+sp_by_sp$bp_exp <- expected_sizes_trunc$bp[match(sp_by_sp$sp, expected_sizes_trunc$sp)]
+sp_by_sp$slidedate <- paste(sp_by_sp$file_prefix, sp_by_sp$exp_series_date)
+
+sp_by_sp_backup <- sp_by_sp
+
+# unique(sp_by_sp_backup$exp_series[grep("Gemkin",sp_by_sp_backup$sp)] )
+# sp_by_sp_backup[grep("Gemkin",sp_by_sp_backup$sp) ,] 
+```
+
+
+at this point, and up till Bootstrap control start, sp_by_sp_backup == sp_by_sp. 
+
+
+### preprocessing
+In this version, we apply (pre-prediction) clusterisation to outlier-filtered controls, as well as to kinetos
+!!!Check the output for species which were identified. If species were named inconsistently during measurements (for example, RHynho and RHMon used for same species, this will be revealed. in such case, 
+run something like 
+for i in INUKIN_Cflexa_22112025_thickstack* ; do sed -i "s/INU_KIN/INUKIN/g" $i ; done 
+oneliner in bash and re-run the preprocessing)
+
+```{r}
+
+sp_by_sp_by_kmeans <- fluo_clustering_combiner_and_filtrator(sp_by_sp, combination_factors = c("est_sp", "slidedate",  "exp_series_date", ""), outlier_method = "IQR" ) 
+
+sp_by_sp_quart <- fluo_preprocess_adjustable(sp_by_sp, debugplot=FALSE, slideORseries = "series", outlier_method = "IQR")
+ 
+# older version below, sp_by_sp_quart still used for pruducing unclustered dataset
+# sp_by_sp_by_kmeans_unfilt <- fluo_clustering_combiner(sp_by_sp_quart)
+# sp_by_sp_by_kmeans <- data.frame()
+# for (ploidy in unique(sp_by_sp_by_kmeans_unfilt$ploidy_clust)) {
+#  tmp <- sp_by_sp_by_kmeans_unfilt[sp_by_sp_by_kmeans_unfilt$ploidy_clust == ploidy, ]
+#  tobind <- fluo_preprocess_adjustable(tmp, debugplot=FALSE, slideORseries = "series", outlier_method = "IQR")
+#  sp_by_sp_by_kmeans <- rbind(sp_by_sp_by_kmeans, tobind) }
+
+
+
+tmp <- sp_by_sp_quart
+tmp$cluster <-  "Undefined" 
+tmp$ploidy_clust <-  "Undefined" 
+tmp$suns_for_clust <-  "NOT CLUSTERED" 
+tmp$bp_exp_ploidy_corr <-  tmp$expected_sizes
+
+sp_by_sp_by_kmeans_plus_uncl <- rbind(tmp, sp_by_sp_by_kmeans)
+
+#in this version - must print both kinetos and control species
+unique(sp_by_sp_by_kmeans$est_sp)
+
+#debug 
+sp_by_sp_by_kmeans_plus_uncl[sp_by_sp_by_kmeans_plus_uncl$est_sp=="INU_KINkDNA_df",]
+```
+
+
+Both kinetos (actual test) and controls are IQR-filtered and clustered.
+
+### plot to check how outliers were filtered
+red dots - filtered
+
+```{r, eval = FALSE , echo=FALSE, results='hide', message=FALSE, warning=FALSE, include=FALSE}
+
+sp_by_sp$filtered_outlier <- "no"
+tmp <- paste0( sp_by_sp_by_kmeans$cell_coord[sp_by_sp_by_kmeans$suns_for_clust == "est_sp "] , sp_by_sp_by_kmeans$est_sp[sp_by_sp_by_kmeans$suns_for_clust == "est_sp "])
+
+tmp2 <- paste0( sp_by_sp$cell_coord , sp_by_sp$est_sp)
+sp_by_sp$filtered_outlier[which((tmp2) %in% unique(tmp) ==FALSE)] <- "yes"
+# 
+
+
+ idx <- match(tmp2, tmp )
+ sp_by_sp$ploidy_clust <- "Undefined"
+ sp_by_sp$ploidy_clust <- sp_by_sp_by_kmeans$ploidy_clust[idx]
+ 
+ which(duplicated(sp_by_sp) ==TRUE)
+ 
+# sp_by_sp$ploidycluster[is.na(sp_by_sp$ploidycluster)] <- "Undefined"
+
+#interaction(est_sp, ploidy_clust.x)
+
+ggplot(sp_by_sp_by_kmeans[sp_by_sp_by_kmeans$suns_for_clust == "est_sp ",], aes(ploidy_clust, nucl_sum_int))+geom_violin(fill = NA)+geom_boxplot(fill = NA)+
+  
+  geom_point(data= sp_by_sp[sp_by_sp$filtered_outlier=="yes",], aes(ploidy_clust, nucl_sum_int), colour ="red", size=0.5, alpha = 0.5, position=position_jitter(height=0, width=0.2))+
+  theme_bw()+ ggtitle("est_sp")+theme(axis.text.x = element_text(angle = 45))+
+  facet_wrap(~est_sp, scales = "free_x")#+
+ # scale_y_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2), breaks = 2^(19:40))
+
+ggsave("outlier_filtering_output.pdf", width = 10, height = 20)
+
+```
+
+
+
+prints the list of slides with 1 or less points of a given species per slide; 
+such points might cause errors when attempting to run the regression across slides, so, for the regression across slides, they should be removed.
+
+```{r}
+
+sp_by_sp_by_kmeans_slidedate <- sp_by_sp_by_kmeans[grep("est_sp exp_series_date", sp_by_sp_by_kmeans$suns_for_clust), ]
+
+for (sp in unique(sp_by_sp_by_kmeans_slidedate$sp)) {
+  tmp1 <- sp_by_sp_by_kmeans_slidedate[sp_by_sp_by_kmeans_slidedate$sp == sp, ]
+  for (slide in unique(tmp1$file_prefix)) {
+         if ( nrow( tmp1[tmp1$file_prefix == slide, ] ) <= 1) {
+         print(paste(sp, slide))  
+         #print ( ggplot(tmp1[tmp1$file_prefix == slide, ], aes(file_prefix, nucl_sum_int))+ geom_point(aes(colour = ploidy_clust), alpha=0.15)+
+         # facet_wrap(~ploidy_clust)+ggtitle(paste(sp, slide))+ theme_bw()+theme(axis.text.x = element_text(angle =90, size =5)))
+       }}}
+```
+
+
+# END OF PREPROCESSING, REGRESSIONS BELOW
+
+
+### Quantile regression-based prediction of test KINETOS, cluster-based
+
+```{r}
+
+  test_kinetos_all <- data.frame()
+ test_kinetos_slidebyslide <- data.frame()
+test_kinetos_series <- data.frame()
+
+for (dataset in unique(sp_by_sp_by_kmeans$suns_for_clust) ) {
+  
+  SUBS_sp <- sp_by_sp_by_kmeans[sp_by_sp_by_kmeans$suns_for_clust == dataset,]
+
+  #used earlier for unclustered version, not required anymore
+  # to_bind_kin <- sp_by_sp[grep(paste(unique(sp_by_sp$test_species), collapse = "|"), sp_by_sp$est_sp),]
+  # to_bind_kin[ , names(SUBS_sp)[ !( names(SUBS_sp) %in% names(to_bind_kin) ) ] ] <- "Undefined"
+  # SUBS_sp <- rbind(to_bind_kin, SUBS_sp)
+  
+  allreg <- quantile_for_clustered_KINETOS(SUBS_sp, slideORseries = "ALL", dataset, debugplot = F)
+ slidereg <- quantile_for_clustered_KINETOS(SUBS_sp, slideORseries = "slide", dataset, debugplot = F)
+ seriesreg <- quantile_for_clustered_KINETOS(SUBS_sp, slideORseries = "series", dataset, debugplot = F)
+
+test_kinetos_all <- rbind( test_kinetos_all, allreg)
+test_kinetos_slidebyslide <- rbind(test_kinetos_slidebyslide,  slidereg)
+test_kinetos_series <- rbind(test_kinetos_series, seriesreg )
+
+}
+
+#debug 
+#test_kinetos_series[test_kinetos_series$est_sp=="Gemkin_KINnucl_df",c("ploidy_clust", "suns_for_clust")]
+
+#ggplot(SUBS_sp[SUBS_sp$file_prefix == "exp_12_5_Gre65_Cflexa_20032025_DAPI600ngml_thickstack",], aes(est_sp, nucl_sum_int))+
+#  geom_point(aes(colour = ploidy_clust))+
+#  facet_wrap(~suns_for_clust)
+
+
+```
+
+
+### Summarising kineto predictions, creating output for Post-process_NEW_by_distr.Rmd
+
+```{r}
+
+test_kinetos_all$suns_for_clust <- paste(test_kinetos_all$suns_for_clust, "ALL")
+test_kinetos_slidebyslide$suns_for_clust <- paste(test_kinetos_slidebyslide$suns_for_clust, "slide")
+test_kinetos_series$suns_for_clust <- paste(test_kinetos_series$suns_for_clust, "series")
+
+
+#unique(test_kinetos_slidebyslide$exp_series_date[grep("Gemkin", test_kinetos_slidebyslide$sp)] )
+```
+
+
+### saving cell-by-cell dataframe (median summary function was here, now moved to another parser)
+
+```{r}
+
+test_kinetos_all_clust <- rbind(test_kinetos_slidebyslide, test_kinetos_series, test_kinetos_all)
+#test_kinetos_all_clust <- rbind(test_kinetos_series)
+
+fwrite(test_kinetos_all_clust, "separate_cells_test_kinetos_all_clust.csv")
+
+#median_summary_regressed[grep("Gemkin", median_summary_regressed$sp), ]
+```
+
+
+### dataframe for regression SE, p-value, R^2 etc.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+#prepare corresponding kineto dataframe
+test_kinetos_all_clust$merger1 <- paste(test_kinetos_all_clust$suns_for_clust, test_kinetos_all_clust$slidedate)
+test_kinetos_all_clust1 <- test_kinetos_all_clust[!duplicated(test_kinetos_all_clust$merger1), ]
+
+fwrite(test_kinetos_all_clust1, "reg_metrics_test_kinetos_all_clust.csv")
+
+```
+
+
+## Summary on the "quality" of KINETO (TEST SPECIES) regressions
+run for more information on regressions inferred
+
+### Coefficients of KINETO (test species) regressions +/- SE,
+### Efron's pseudo R-squared (how good is the fit?)
+### SE of regression coefficient
+### p-value
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+gg <- ggplot(test_kinetos_all_clust1, aes( suns_for_clust , coeficcient) )+ 
+  geom_violin()+ geom_boxplot(alpha =0.2, width = 0.2)+ geom_pointrange(aes(ymin=as.numeric(coeficcient-SE), ymax=as.numeric(coeficcient+SE), shape = test_species , colour = slidedate),  linewidth=1, alpha=0.5, position=position_jitter(height=0, width=0.2, seed = 123))+theme_linedraw()+theme(axis.text.x = element_text(angle =90))+ theme(legend.position = "none")+
+   ggtitle("Coefficients of regressions +/- SE (colour = slidedate)")
+
+ggplot(test_kinetos_all_clust1, aes( suns_for_clust , as.numeric(R2)) )+ geom_violin()+
+   geom_point(aes(colour = test_species), alpha = 0.5, position=position_jitter(width=0.2, height = 0))+
+  theme_linedraw()+theme(axis.text.x = element_text(angle =90))+
+   #theme(legend.position = "bottom")+
+   ggtitle("Efron's pseudo R-squared, test KINETOS")
+
+ggplot(test_kinetos_all_clust1, aes( suns_for_clust , as.numeric(SE)) )+  geom_violin()+
+   geom_point(aes(colour = test_species), alpha = 0.5, position=position_jitter(width=0.2, height = 0))+
+  theme_linedraw()+theme(axis.text.x = element_text(angle =90))+
+   #theme(legend.position = "bottom")+
+   ggtitle("SE, test KINETOS")
+
+ggplot(test_kinetos_all_clust1, aes( suns_for_clust , as.numeric(pvalue)) )+ geom_violin()+
+   geom_point(aes(colour = test_species), alpha = 0.5, position=position_jitter(width=0.2, height = 0))+
+  theme_linedraw()+theme(axis.text.x = element_text(angle =90))+
+   ggtitle("p-value, test KINETOS")
+
+
+```
+
+
+
+## filtering regressions by p-value, R2, SE, other factors, for bootstrap-like regressions and saving filtered df
+Change filtering parameters accordingly, depending on distributions visualised above and your setup. Especially important if estimates for regressions for each separate slide will be used for final estimates.
+
+```{r}
+tokeep <- test_kinetos_all_clust1$merger1[which(test_kinetos_all_clust1$R2 >= 0.6 & 
+                                        test_kinetos_all_clust1$SE <= 4 & 
+                                        test_kinetos_all_clust1$pvalue < 0.05) ]
+#prints discarded ones
+print(paste( "FOLLOWING MODEL WILL BE DISCARDED IN FILTERED OUTPUT:", test_kinetos_all_clust1$merger1[test_kinetos_all_clust1$merger1 %in% tokeep == FALSE ] ))
+```
+
+### OPTIONALLY - saving cell-by-cell dataframe filtered by p-value, R2, SE, etc.
+
+```{r}
+
+test_kinetos_all_clust_filtered <- test_kinetos_all_clust[ test_kinetos_all_clust$merger1 %in% tokeep, ]
+
+fwrite(test_kinetos_all_clust_filtered, "FILTEREDseparate_cells_test_kinetos_all_clust.csv")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Quantile regression-based prediction - control species genome sizes
+"bootstrap-like" approach is used - out of 4 species, one control species is treated as that with unknown genome size, and estimates for the rest control species are used for prediction. DOne for each species
+
+### Now,we actually subset to control species and keep operation on that dataset 
+### !!! Subsetting to only control species !!! Required for clusterisation, BUT dont forget to merge back when predicting kinetos
+
+now the chunk below should return only the control species, genome sizes of which appear in expected_sizes_trunc dataframe (created in the preprocessing step)
+
+```{r}
+sp_by_sp_by_kmeans_plus_uncl <- sp_by_sp_by_kmeans_plus_uncl[sp_by_sp_by_kmeans_plus_uncl$sp %in% expected_sizes_trunc$sp,]
+
+#now it should return only the control species
+unique(sp_by_sp_by_kmeans_plus_uncl$est_sp)
+
+```
+
+
+```{r}
+
+
+bad_slide_list_seriesreg <- c("20032025_thickstacks_noHU")
+bad_species_list_seriesreg <-c("Diplo")
+
+bad_slide_list_slidereg <- c("exp_12_5_Rhyncho_noHU_Capsa_noHU_Cflexa_DAPI600ngml_thickstack", "25022025_exp_12_5_Gemkin_Cflexa_DAPI600ngml", "exp_12_5_INUKIN1_Cflexa_thickstack",
+                             "INUKIN_Cflexa_12092025_DAPI600ngml_thickstack", "Rhyncho_Cflexa_12092025_DAPI600ngml_thickstack", "13G_Sros_06092025_DAPI600ngml_thickstack", "10D_Sros_06092025_DAPI600ngml_thickstack", "Gemkin_Sros_09102025_DAPI600ngml_thickstack", "10D_Cflexa_06092025_DAPI600ngml_thickstack","exp_12_5_Allob_Cflexa_25042025_thickstack", "INUKIN_Cflexa_09102025_DAPI600ngml_thickstack")
+bad_species_list_slidereg <-c("Diplo", "Capsa", "Yeast")
+
+bootstr_all <- data.frame()
+bootstr_slide <- data.frame()
+bootstr_series <- data.frame()
+
+for (dataset in unique(sp_by_sp_by_kmeans_plus_uncl$suns_for_clust) ) {
+  
+SUBS_sp <- sp_by_sp_by_kmeans_plus_uncl[sp_by_sp_by_kmeans_plus_uncl$suns_for_clust == dataset,]
+#if a given slide is interferring with the process, you can artificially discard it as a last resort by uncommenting the line below and pasting slide name
+#SUBS_sp <- SUBS_sp[-grep("", SUBS_sp$id),]
+
+reg_all <- quantile_for_clustered_BOOTSTRAPS(SUBS_sp, slideORseries = "ALL", dataset = dataset, debugplot = F)
+reg_slide <- quantile_for_clustered_BOOTSTRAPS(SUBS_sp, slideORseries = "slide", bad_slide_list = bad_slide_list_slidereg, bad_species_list = bad_species_list_slidereg, dataset, debugplot = F)
+reg_series <- quantile_for_clustered_BOOTSTRAPS(SUBS_sp, slideORseries = "series", bad_slide_list = bad_slide_list_seriesreg, bad_species_list = bad_species_list_seriesreg, dataset = dataset, debugplot = F)
+
+bootstr_all <- rbind(bootstr_all, reg_all)
+bootstr_slide <- rbind(bootstr_slide, reg_slide)
+bootstr_series <- rbind(bootstr_series, reg_series)
+
+}
+
+```
+
+
+
+In the old version, regressions were filtered by p-value at this step. Now they are filtered later, so this chunk is kept as relict and to backup raw regression result df 
+Uncomment to automatically filter everything by p-value. regressions with p-values \> 0.05 as a rule have near-zero coefficient
+
+```{r}
+
+bootstr_all_pfilt <- bootstr_all#[bootstr_slide$pvalue <= 0.05, ]
+bootstr_slide_pfilt <- bootstr_slide#[bootstr_slide$pvalue <= 0.05, ]
+bootstr_series_pfilt <- bootstr_series#[bootstr_series$pvalue <= 0.05, ]
+
+```
+
+
+
+### Postprocess predictions so that they are put in a same dataframe as actual values, and bind regressions over different subsets (slide or series) in the same dataframe
+
+```{r}
+to_bind <- sp_by_sp_by_kmeans_plus_uncl[sp_by_sp_by_kmeans_plus_uncl$sp %in% unique(expected_sizes_trunc$sp), ]
+###
+#put in a same dataframe as actual values
+toplot_all <- bind_pred_vs_actual_BOOTSTRAPS(bootstr_all_pfilt, to_bind, slideORseries = "ALL")
+toplot_slide <- bind_pred_vs_actual_BOOTSTRAPS(bootstr_slide_pfilt, to_bind, slideORseries = "slide")
+toplot_series <- bind_pred_vs_actual_BOOTSTRAPS(bootstr_series_pfilt, to_bind, slideORseries = "series")
+
+#bind regressions over different subsets (slide or series) in the same dataframe
+
+toplot <- rbind(toplot_slide, toplot_series, toplot_all)
+# toplot <- rbind(toplot_series)
+#Check if settings actually had different values
+# length( which((toplot_slide$bp_exp_ploidy_corr == toplot_series$bp_exp_ploidy_corr) == FALSE) ) > 0
+
+# unique(toplot$ploidy_clust[toplot$if_test_sp == "TEST_bootstrap"])
+
+```
+
+
+
+
+
+# PLOTS and summary
+
+### adding variables which will be used for "beatiful" plots
+
+```{r}
+
+
+###!!! Order of the next lines matters!                       
+toplot$beatiful_suns <- toplot$suns_for_clust
+
+toplot$beatiful_suns <- str_replace(toplot$suns_for_clust, "NOT CLUSTERED " , "NOT CLUSTERED; ")
+toplot$beatiful_suns <- str_replace(toplot$beatiful_suns, "est_sp exp_series_date " , "II; ")
+toplot$beatiful_suns <- str_replace(toplot$beatiful_suns, "est_sp slidedate " , "III; ")
+toplot$beatiful_suns <- str_replace(toplot$beatiful_suns, "est_sp " , "I; ")
+
+toplot$beatiful_suns <- str_replace(toplot$beatiful_suns, "ALL" , "I")
+toplot$beatiful_suns <- str_replace(toplot$beatiful_suns, "series" , "II")
+toplot$beatiful_suns <- str_replace(toplot$beatiful_suns, "slide" , "III")
+
+toplot$beatiful_sp <- toplot$sp
+
+toplot$beatiful_sp <- str_replace(toplot$sp, "Sros" , "Salpingoeca rosetta")
+toplot$beatiful_sp <- str_replace(toplot$beatiful_sp, "Capsa" , "Capsaspora owczarzaki")
+toplot$beatiful_sp <- str_replace(toplot$beatiful_sp, "Diplo" , "Diplonema papillatum")
+toplot$beatiful_sp <- str_replace(toplot$beatiful_sp, "Cflexa" , "Choanoeca flexa")
+toplot$beatiful_sp <- str_replace(toplot$beatiful_sp, "Yeast" , "Saccharomyces cerevisiae")
+
+#Sanity check - if the clusterisation was done correctly
+
+# ggplot(toplot, aes(interaction(ploidy_clust, sp), bp_exp))+ geom_boxplot( alpha = 0)+ geom_point(aes(colour=sp),size =1.5, alpha = 0.05, position=position_jitter(height=0, width=0.2))+
+#  theme_bw()+scale_color_brewer(palette = "Set2")+theme(axis.text.x = element_blank())+ facet_wrap(~suns_for_clust)+ scale_y_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2), breaks = 2^(19:40))
+
+```
+
+
+
+
+## Summary on the "quality" of CONTROL ("bootstrap-like") regressions
+run for more information on regressions inferred
+
+### Coefficients of regressions +/- SE,
+### Efron's pseudo R-squared (how good is the fit?)
+### SE of regression coefficient
+### p-value
+
+pseudo-R-squred for Bootstrap-like validations makes few sense - it is sensitive to the absolute genome sizes,
+because it equals 1-(RSS/TSS), where RSS is residual sum of squares, and TSS is total sum of squares. Since TSS is computed from MEAN, adding species with very large genome (like DIPLO) increases MEAN disproportionately. Therefore, this estimate is omitted here, se developer version if curious.
+
+Note the log scale and the fact that Diplo seems critical for the prediction
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+subs <- toplot[!duplicated(toplot$bootstrap_setting), ]
+
+subs$species_out <- str_replace(subs$bootstrap_setting, " .*", "")
+
+ggplot(subs, aes( suns_for_clust , coeficcient) )+ 
+  geom_violin()+ geom_boxplot(alpha =0.2, width = 0.2)+ geom_pointrange(aes(ymin=as.numeric(coeficcient-SE), ymax=as.numeric(coeficcient+SE), shape = test_species , colour = slidedate),  linewidth=1, alpha=0.5, position=position_jitter(height=0, width=0.2, seed = 123))+theme_linedraw()+theme(axis.text.x = element_text(angle =90))+ theme(legend.position = "none")+
+   ggtitle("Coefficients of regressions +/- SE (colour = slidedate)")
+
+ggplot(subs, aes( suns_for_clust , as.numeric(SE)) )+ geom_violin()+
+   geom_point(aes(colour = test_species), alpha = 0.5, position=position_jitter(width=0.2, height = 0))+
+  theme_linedraw()+theme(axis.text.x = element_text(angle =90))+
+   #theme(legend.position = "bottom")+
+   ggtitle("SE, test CONTROLS")
+
+ggplot(subs, aes( suns_for_clust , as.numeric(pvalue)) )+  geom_violin()+
+   geom_point(aes(colour = test_species), alpha = 0.5, position=position_jitter(width=0.2, height = 0))+
+  theme_linedraw()+theme(axis.text.x = element_text(angle =90))+
+   ggtitle("p-value, test CONTROLS")
+
+
+```
+
+
+### filtering regressions by p-value, R2, SE, other factors, for bootstrap-like regressions and saving filtered df
+
+```{r}
+
+toplot <- toplot[!is.na(toplot$bp_exp_ploidy_corr),]
+
+toplot <- toplot[ -intersect( which(toplot$pvalue > 0.05), which(toplot$validation == "BOOTSTRAP-LIKE_PREDICTED") ),]
+#toplot <- toplot[ -(which(toplot$validation == "BOOTSTRAP-LIKE_PREDICTED") ),]
+
+#toplot <- toplot[which(toplot$R2 >= 0.15),]
+#toplot <- toplot[which(toplot$SE <= 0.1),]
+#toplot <- toplot[!grep("", toplot),]
+#unique(toplot$validation)
+
+fwrite(toplot, "FILTERED_TOPLOT_bootstrap_out_clustered.csv")
+
+```
+
+
+
+
+
+## How close are the inferred medians to the expected counts?
+## Mean(Predicted medians - expected_bp)/expected_bp
+Done accounting pre-prediction clustering data.
+When suns_for_clust is clustered - the predicted value is substracted from the expected value, and module(absolute value) of difference is used.
+### !!! Two values are produced - normalised by total bp_exp (so different species with equal genome sizes are comparable), and non-normalised. Normalised is taken for subsequent comparions.
+Non-normalised was used in an older version. If you want to change back to it change "metrics_value" in tmp dataframe from diff_big_norm ==> diff_big
+
+
+```{r, include=FALSE}
+MEDIAN_summary <- data.frame()
+
+for(sp in unique(toplot$sp)){
+  
+  df <- toplot[toplot$sp == sp,]
+  actual_pos <- unique(df$bp_exp_ploidy_corr[df$validation == "ACTUAL"])
+  
+  df1 <- df[df$if_test_sp=="TEST_bootstrap",]
+  #df1$for_medians <- paste(df1$suns_for_clust, df1$slidedate)
+  df1 <- df1[ which(is.na(df1$bp_exp_ploidy_corr) == FALSE), ]
+  
+  for (setting in unique(df1$suns_for_clust)) {
+    df3 <- df1[df1$suns_for_clust == setting,]
+  for (ploidy in unique(df3$ploidy_clust)) {
+    df2 <- df3[df3$ploidy_clust == ploidy,]
+    diff_big <- c()
+    diff_big_norm <- c()
+  for (i in unique(df2$slidedate)) {
+    if (nrow(df2[df2$slidedate==i,]) == 0 ) next 
+    
+    med <- median(df2$bp_exp_ploidy_corr[df2$slidedate==i])
+  
+    if (ploidy == "1n") { 
+      diff <- min(actual_pos) - med 
+      diff_norm <-(min(actual_pos) - med)/min(actual_pos) } else 
+    if (ploidy == "2n") { 
+      diff <- med - max(actual_pos) 
+      diff_norm <- (med - max(actual_pos))/max(actual_pos) } else 
+    if (ploidy == "Undefined") {
+    if (med < min(actual_pos)) {
+      diff <-  min(actual_pos) - med 
+      diff_norm <-  (min(actual_pos) - med)/min(actual_pos) } 
+    else if(med > max(actual_pos)){
+      diff <- med - max(actual_pos)  
+      diff_norm <- (med - max(actual_pos))/max(actual_pos) }
+    else if(med > min(actual_pos) & med < max(actual_pos)) {
+      diff <- mean( abs(min(actual_pos) - med), abs(med - max(actual_pos)) )
+      diff_norm <- mean( abs(min(actual_pos) - med), abs(med - max(actual_pos)) )/mean((min(actual_pos)),(max(actual_pos))) } 
+    }
+    # for debug purposes
+    #print(ploidy)
+    #print(diff_norm)
+    diff_big <- c(diff_big, diff)
+    diff_big_norm <- c(diff_big_norm, diff_norm)
+  }
+    #print(ploidy)
+    #print(diff_big_norm)
+    ################### NORMALISING BY THE NUMBER OF DATAPOINTS 
+    
+    
+   tmp <-   data.frame("metrics" = "Mean(|Predicted medians - expected_bp|)/bp_exp",
+                       "suns_for_clust" = setting,
+                        "sp" = sp,
+                         "metrics_value" = mean(abs(diff_big_norm)) )
+   MEDIAN_summary <- rbind(MEDIAN_summary, tmp)
+  } }
+}
+
+
+```
+
+
+## How close are the inferred bp counts to the expected counts?
+## |(bp_expected - bp_predicted)|/bp_exp
+
+```{r, include=FALSE}
+Pred_bp_delta_summary <- data.frame("metrics" = NA,
+                               "suns_for_clust" = NA,
+                               "sp" = NA,
+                               "metrics_value" = NA)
+
+for(sp in unique(toplot$sp)){
+  
+  df <- toplot[toplot$sp == sp,]
+  actual_pos <- unique(df$bp_exp_ploidy_corr[df$validation == "ACTUAL"])
+  
+  df1 <- df[df$if_test_sp=="TEST_bootstrap",]
+  #df1$for_medians <- paste(df1$suns_for_clust, df1$slidedate)
+  df1 <- df1[ which(is.na(df1$bp_exp_ploidy_corr) == FALSE), ]
+  
+  for (setting in unique(df1$suns_for_clust)) {
+  for (ploidy in unique(df1$ploidy_clust)) {
+    df2 <- df1[df1$suns_for_clust == setting,]
+    df2 <- df2[df2$ploidy_clust == ploidy,]
+    
+    diff_big <- mean(abs(df2$PERCENTdiff_from_actual))
+    
+   tmp <-   data.frame("metrics" = "|(bp_expected - bp_predicted)|/bp_exp",
+                       "suns_for_clust" = setting,
+                        "sp" = sp,
+                         "metrics_value" = diff_big )
+   Pred_bp_delta_summary <- rbind(Pred_bp_delta_summary, tmp)
+  } }
+}
+
+```
+
+### corresponding plots
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#datatable(Pred_bp_delta_summary)
+
+
+plotlist <- list()
+for(sp in unique(toplot$sp) ){
+
+  df <- toplot[toplot$sp == sp,]
+  #
+    #df <- df[df$ploidy_clust == "1n",]
+    actual_pos <- unique(df$bp_exp_ploidy_corr[df$validation == "ACTUAL"])
+  
+    df <- df[df$if_test_sp == "TEST_bootstrap",]
+df <- df[!is.na(df$sp) & !is.na(df$suns_for_clust),]
+   gg <- ggplot(df, aes( bp_exp_ploidy_corr ) )+geom_histogram(aes(fill = ploidy_clust), bins = 30, alpha = 0.4, position = "identity")+
+     theme_bw()+geom_vline( aes(xintercept = actual_pos[1]) )+ geom_vline( aes(xintercept = actual_pos[2]) )+
+    scale_x_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2), breaks = 2^(19:40))+facet_wrap(~suns_for_clust)+
+  theme(legend.position = "none")+
+     ggtitle(sp)
+  
+print(gg)
+  plotlist[[length(plotlist) + 1]] <- gg
+ 
+}
+
+
+```
+
+
+
+
+
+
+## PLOTS FOR MANUSCRIPT
+
+
+```{r}
+
+plotlist <- list()
+for(sp in unique(toplot$beatiful_sp) ){
+
+  df <- toplot[toplot$beatiful_sp == sp,]
+  #
+    #df <- df[df$ploidy_clust == "1n",]
+    actual_pos <- unique(df$bp_exp_ploidy_corr[df$validation == "ACTUAL"])
+  
+    df <- df[df$if_test_sp == "TEST_bootstrap",]
+df <- df[!is.na(df$sp) & !is.na(df$beatiful_suns),]
+
+
+   gg <- ggplot(df, aes( bp_exp_ploidy_corr ) )+geom_histogram(aes(fill = ploidy_clust), bins = 30, alpha = 0.4, position = "identity")+
+     theme_bw()+    scale_x_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2))+
+     geom_vline(xintercept = actual_pos[1])+
+     geom_vline(xintercept = actual_pos[2])+
+     facet_wrap(~beatiful_suns)+
+  theme(legend.position = "none")+
+     xlab("predicted genome size, bp")+ylab("number of cells")+
+     ggtitle(sp)
+  
+#print(gg)
+  plotlist[[length(plotlist) + 1]] <- gg
+ 
+}
+
+
+ggexport(plotlist = plotlist, filename = "distribution_colntrols_suppl.pdf", ncol = 1, height = 20)
+
+```
+
+
+
+```{r}
+
+plotlist <- list()
+for(sp in unique(toplot$beatiful_sp) ){
+
+  df <- toplot[toplot$beatiful_sp == sp,]
+
+  df <- df[df$suns_for_clust == "est_sp  ALL",]
+  #
+    #df <- df[df$ploidy_clust == "1n",]
+    actual_pos <- unique(df$bp_exp_ploidy_corr[df$validation == "ACTUAL"])
+  
+    df <- df[df$if_test_sp == "TEST_bootstrap",]
+    
+  #  df <- df[!is.na(df$sp) & !is.na(df$suns_for_clust),]
+
+   gg <- ggplot(df, aes( bp_exp_ploidy_corr ) )+geom_histogram(aes(fill = ploidy_clust), bins = 30, alpha = 0.4, position = "identity")+
+     theme_bw()+ scale_x_continuous(trans = "log2", labels = scales::math_format(2^.x, format = log2))+
+     geom_vline(xintercept = actual_pos[1] )+ 
+     geom_vline(xintercept = actual_pos[2] )+
+  theme(legend.position = "none")+
+     xlab("predicted genome size, bp")+ylab("number of cells")+
+     ggtitle(sp)
+  
+#print(gg)
+
+ plotlist[[length(plotlist) + 1]] <- gg
+
+}
+
+
+ggexport(plotlist = plotlist, filename = "distribution_colntrols_main.pdf", nrow = 2, ncol = 2)
+
+```
+
+
+
+```{r}
+
+
+median_summary_control <- predictedbp_median_estimator(data.frame(toplot[toplot$suns_for_clust == "est_sp  ALL" & toplot$if_test_sp == "TEST_bootstrap",]), subset_for_median_estimation = "ploidy"  )
+median_summary_control$sp <- str_replace(median_summary_control$sp, "nucl_df", "")
+
+tmp <- toplot[toplot$validation == "ACTUAL", c("sp", "bp_exp_ploidy_corr", "ploidy_clust", "beatiful_sp")]
+tmp <- tmp[!duplicated(tmp),]
+
+
+
+median_summary_control_act <- median_summary_control %>% full_join(tmp) 
+
+median_summary_control_act <- median_summary_control_act[median_summary_control_act$ploidy_clust != "Undefined",]
+median_summary_control_act$ploidy_clust <- str_replace(median_summary_control_act$ploidy_clust, "1n", "G1")
+median_summary_control_act$ploidy_clust <- str_replace(median_summary_control_act$ploidy_clust, "2n", "G2")
+
+#adding means of medians for each species - so far, done because this is a way to obtain a single estimate of the genome size
+median_summary_control_act <- median_summary_control_act %>% group_by(beatiful_sp, ploidy_clust) %>%  mutate(mean_MEDIAN_bp_exp = mean(MEDIAN_bp_exp, na.rm = TRUE))%>%ungroup()
+
+
+gg_mainB <- ggplot(median_summary_control_act, aes(factor(beatiful_sp, 
+                                              levels = c("Saccharomyces cerevisiae", "Capsaspora owczarzaki","Salpingoeca rosetta", "Diplonema papillatum" )), (MEDIAN_bp_exp-bp_exp_ploidy_corr)/bp_exp_ploidy_corr) )+
+    #geom_boxplot(aes(fill = as.factor(exp_series_date)) )+#geom_point(alpha = 0.1)+
+    geom_violin( ) +
+   geom_point(alpha=0.25 ) +
+     geom_point( aes( x=beatiful_sp, y = (mean_MEDIAN_bp_exp-bp_exp_ploidy_corr)/bp_exp_ploidy_corr ), colour = "coral2", shape =8, size=3 ) +
+
+#   geom_pointrange( aes( 
+#   ymin= (MEDIAN_bp_exp-as.numeric(mean_lower)-bp_exp_ploidy_corr)/bp_exp_ploidy_corr,
+#  ymax= (MEDIAN_bp_exp+as.numeric(mean_higher)-bp_exp_ploidy_corr)/bp_exp_ploidy_corr ), 
+#                 colour = "coral2", shape =8)+
+ 
+  # geom_line( aes(group=exp_series_date), alpha=0.15)+
+  facet_wrap(~ploidy_clust, scales = "free_y", ncol=1)+
+     theme_bw()+theme(axis.text.x = element_text(angle =45, hjust = 1))+
+     ylab("difference of predicted median from actual genome size")+
+     xlab("Control species predicted")
+
+
+
+ggsave(gg_mainB, filename = "median_distr_controls_main.pdf")
+
+
+```
+
+
+```{r}
+
+figA <- (plotlist[[3]] | plotlist[[1]]) /
+        (plotlist[[4]] | plotlist[[2]])
+gg_mainB <- gg_mainB + theme(plot.margin = unit(c(0.5, 0.5, 0.5, 0.2), "cm"))
+
+final_fig <- figA / gg_mainB +
+  plot_layout(widths = c(1.3, 1))  
+  #plot_annotation(tag_levels = c("A", "B"))
+
+ggsave("controls_main.pdf", final_fig,  height = 10)
+
+```
+
+
+
+```{r}
+
+plotlist <- list()
+
+for(suns in unique(toplot$suns_for_clust)){
+  
+suns1 <- str_replace(suns, "est_sp .* ", "ploidy")
+suns1 <- str_replace(suns1, "NOT CLUSTERED ", "ploidy")
+
+suns1 <- str_replace(suns1, "slide", "__slidedate")
+suns1 <- str_replace(suns1, "series", "__exp_series_date")
+suns1 <- str_replace(suns1, "ALL", "")
+  
+# print(c(suns, suns1))
+
+
+toest <- data.frame(toplot[toplot$suns_for_clust == suns & toplot$if_test_sp == "TEST_bootstrap",])
+toest[-which(is.na(toest$bp_exp_ploidy_corr)==TRUE),]
+
+
+median_summary_control <- predictedbp_median_estimator(toest, subset_for_median_estimation = suns1 , BS_replicates = 100  )
+median_summary_control$sp <- str_replace(median_summary_control$sp, "nucl_df", "")
+
+tmp <- toplot[toplot$validation == "ACTUAL", c("sp", "bp_exp_ploidy_corr", "ploidy_clust", "beatiful_sp")]
+tmp <- tmp[!duplicated(tmp),]
+
+
+
+median_summary_control_act <- median_summary_control %>% full_join(tmp) 
+if(length(grep("NOT CLUSTERED", suns)) ==0) {
+  median_summary_control_act <- median_summary_control_act[median_summary_control_act$ploidy_clust != "Undefined",] }
+else {median_summary_control_act <- median_summary_control_act[median_summary_control_act$ploidy_clust == "Undefined",] }
+median_summary_control_act$ploidy_clust <- str_replace(median_summary_control_act$ploidy_clust, "1n", "G1")
+median_summary_control_act$ploidy_clust <- str_replace(median_summary_control_act$ploidy_clust, "2n", "G2")
+
+#adding means of medians for each species - so far, done because this is a way to obtain a single estimate of the genome size
+median_summary_control_act <- median_summary_control_act %>% group_by(beatiful_sp, ploidy_clust) %>%  mutate(mean_MEDIAN_bp_exp = mean(MEDIAN_bp_exp, na.rm = TRUE))%>%ungroup()
+
+
+gg <- ggplot(median_summary_control_act, aes(factor(beatiful_sp, 
+                                              levels = c("Saccharomyces cerevisiae" , "Capsaspora owczarzaki","Salpingoeca rosetta", "Diplonema papillatum" )), (MEDIAN_bp_exp-bp_exp_ploidy_corr)/bp_exp_ploidy_corr) )+
+    #geom_boxplot(aes(fill = as.factor(exp_series_date)) )+#geom_point(alpha = 0.1)+
+    geom_violin( ) +
+   geom_point(alpha=0.25 ) +
+     geom_point( aes( x=beatiful_sp, y = (mean_MEDIAN_bp_exp-bp_exp_ploidy_corr)/bp_exp_ploidy_corr ), colour = "red", shape =18, size=1 ) +
+ # geom_line( aes(group=exp_series_date), alpha=0.15)+
+  facet_wrap(~ploidy_clust, scales = "free_x")+
+     theme_bw()+
+  theme(axis.text.x = element_text(angle =45, hjust = 1),
+         axis.text = element_text(size = 7),
+    axis.title = element_text(size = 7))+
+     ylab("predicted median VS actual genome size")+
+     xlab("Control species predicted")+
+  ggtitle(toplot$beatiful_suns[toplot$suns_for_clust == suns])+scale_y_continuous(trans = "asinh")
+
+gg
+  plotlist[[length(plotlist) + 1]] <- gg
+ 
+}
+
+
+ggexport(plotlist = plotlist, filename = "median_distr_controls_suppl.pdf", ncol = 4, nrow =ceiling(length(plotlist) / 3), height = 15, width = 9)
+
+#for (i in length(plotlist)) {  print(plotlist[i])}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
