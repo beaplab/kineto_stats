@@ -793,7 +793,8 @@ UPDATED_images_taken_data.csv essentially contains data on the experiment, it is
 
 Chunk below to get an overview of the number of slides which were measured. Can be removed/commented with no effect.
 ```{r, echo=FALSE, results='hide', message=FALSE, warning=FALSE}
-list <- c("20032025_thickstacks_noHU","25022025","1022025", "14022025", "21122024", "12042025", "27052025", "7052025", "25042025", "12072025", "5072025", "12092025", "6092025", "9102025", "26092025","22112025", "9112025")
+list <- c("20032025_thickstacks_noHU","25022025","1022025", "14022025", "12042025", "27052025", "7052025", "25042025", "12072025", "5072025", "12092025", "6092025", "9102025", "26092025","22112025", "9112025")
+# "21122024"
 # "20032025_thickstacks_HU", 
 # "31032025" 
 meas_files <- data.frame("exp_series_date"=c(), "file"=c())
@@ -831,7 +832,8 @@ ggsave("slides_measured_counts.png", gg1, height = 10, width = 10)
 Actually creates a big table with all the measurements which will be used throughout the calc.
 
 ```{r, results='hide', message=FALSE, warning=FALSE}
-list <- c("20032025_thickstacks_noHU", "25022025","1022025", "14022025", "21122024", "12042025", "27052025", "7052025", "25042025", "12072025", "5072025", "12092025", "6092025", "9102025", "26092025","22112025", "9112025")
+list <- c("20032025_thickstacks_noHU", "25022025","1022025", "14022025", "12042025", "27052025", "7052025", "25042025", "12072025", "5072025", "12092025", "6092025", "9102025", "26092025","22112025", "9112025")
+# "21122024",
 # "20032025_thickstacks_HU", 
 # "31032025" 
 
@@ -1699,6 +1701,9 @@ for(sp in unique(toplot$beatiful_sp) ){
 
 ggexport(plotlist = plotlist, filename = "distribution_colntrols_main.pdf", nrow = 2, ncol = 2)
 
+combined <- wrap_plots(plotlist, nrow = 4, ncol = 1)
+ggsave( "distribution_colntrols_poster.svg", combined, width =6, height = 15)
+
 ```
 
 
@@ -1729,7 +1734,7 @@ gg_mainB <- ggplot(median_summary_control_act, aes(factor(beatiful_sp,
     #geom_boxplot(aes(fill = as.factor(exp_series_date)) )+#geom_point(alpha = 0.1)+
     geom_violin( ) +
    geom_point(alpha=0.25 ) +
-     geom_point( aes( x=beatiful_sp, y = (mean_MEDIAN_bp_exp-bp_exp_ploidy_corr)/bp_exp_ploidy_corr ), colour = "coral2", shape =8, size=3 ) +
+     geom_point( aes( x=beatiful_sp, y = (mean_MEDIAN_bp_exp-bp_exp_ploidy_corr)/bp_exp_ploidy_corr ), colour = "coral2", shape =8, size=6 ) +
 
 #   geom_pointrange( aes( 
 #   ymin= (MEDIAN_bp_exp-as.numeric(mean_lower)-bp_exp_ploidy_corr)/bp_exp_ploidy_corr,
@@ -1746,6 +1751,8 @@ gg_mainB <- ggplot(median_summary_control_act, aes(factor(beatiful_sp,
 
 ggsave(gg_mainB, filename = "median_distr_controls_main.pdf")
 
+
+ggsave(gg_mainB, filename = "median_distr_controls_poster.svg", height = 5, width = 3.6)
 
 ```
 

@@ -6,7 +6,7 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, dev = "ragg_png")
 ```
 
 
@@ -585,7 +585,7 @@ my_cols <- c (my_cols, brewer.pal(8, "Set2")[c(1,2)])
 breaks <- c("Rhyncho", "BABKIN", "INUKIN", "D44", "Gre65",  "10D", "13G", "Allob", "Gemkin", "OB23")
 
  ggplot(busco_exp_niceplot_m, aes(x=(MEDIAN_bp_exp.nuclearDNA_kineto-Mbp_observed*2)/(MEDIAN_bp_exp.kDNA+MEDIAN_bp_exp.nuclearDNA_kineto),y = MEDIAN_bp_exp.kDNA/(MEDIAN_bp_exp.kDNA+MEDIAN_bp_exp.nuclearDNA_kineto)))+
-    #   geom_smooth(method = "lm",se = TRUE,colour = "grey80", fill ="grey90", linewidth = 0.8) +
+       geom_smooth(method = "lm",se = TRUE,colour = "grey80", fill ="grey90", linewidth = 0.8) +
    
    annotate("text", label=paste("R2", round(summary(fit)$r.squared,2), "; p-value", round(summary(fit)$coefficients[2, 4],4) ), y=0.6, x=0.2,size=3)+
 #geom_line(aes(group=est_sp))+
