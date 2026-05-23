@@ -780,7 +780,7 @@ expected_sizes_trunc <- data.frame("sp"= c("Diplo", "Capsa", "Cflexa", "Sros", "
 set path to the folder containing subfolders with measurements in your filesystem
 ```{r}
 
-MEAS_ANALYSIS <- "/home/darynazavadska/Data/kinetos_born_again/MEAS_ANALYSIS/"
+MEAS_ANALYSIS <- "/home/daryna/Data/kinetos_born_again/MEAS_ANALYSIS/"
 
 ```
 
@@ -1793,7 +1793,7 @@ toest <- data.frame(toplot[toplot$suns_for_clust == suns & toplot$if_test_sp == 
 toest[-which(is.na(toest$bp_exp_ploidy_corr)==TRUE),]
 
 
-median_summary_control <- predictedbp_median_estimator(toest, subset_for_median_estimation = suns1 , BS_replicates = 100  )
+median_summary_control <- predictedbp_median_estimator(toest, subset_for_median_estimation = suns1 , BS_replicates = 2000  )
 median_summary_control$sp <- str_replace(median_summary_control$sp, "nucl_df", "")
 
 tmp <- toplot[toplot$validation == "ACTUAL", c("sp", "bp_exp_ploidy_corr", "ploidy_clust", "beatiful_sp")]
